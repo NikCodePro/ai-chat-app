@@ -1,0 +1,16 @@
+export const colors = {
+  background: '#090B11',
+  backgroundSecondary: '#111626',
+  card: 'rgba(23, 30, 50, 0.68)',
+  cardBorder: 'rgba(255, 255, 255, 0.15)',
+  primary: '#5BD6FF',
+  secondary: '#7C8BFF',
+  accent: '#5CFFB1',
+  text: '#F7FAFF',
+  muted: '#99A2B7',
+  success: '#49D987',
+  danger: '#FF6B81',
+  bubbleUser: '#4D5DFF',
+  bubbleAI: '#1A2237',
+  overlay: 'rgba(8, 10, 18, 0.72)',
+};

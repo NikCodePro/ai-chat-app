@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "ai-chat-app",
+    "slug": "ai-chat-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "aichatapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "experiments": {
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "56ffecd4-e30e-40b5-a5d8-c33c88474cfe"
+      }
+    }
+  }
+}
