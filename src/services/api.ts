@@ -1,6 +1,5 @@
 // API Base Configuration
-export const API_BASE_URL = "https://ai-chat-backend-rkjk.onrender.com/api/v1";
-// export const API_BASE_URL = "http://192.168.1.9:8000/api/v1";
+export const API_BASE_URL = "http://192.168.1.9:8000/api/v1";
 
 export type ApiResponse<T> = {
   success: boolean;
@@ -27,6 +26,8 @@ export interface User {
   email: string | null;
   phone: string | null;
   phone_verified: boolean;
+  auth_provider?: string;
+  email_verified?: boolean;
   created_at: string;
 }
 
@@ -172,6 +173,17 @@ export const authApi = {
       },
     });
     const data = await handleResponse<User>(response);
+    return data.data;
+  },
+
+  // Google authentication
+  googleAuth: async (idToken: string): Promise<AuthTokens> => {
+    const response = await fetch(`${API_BASE_URL}/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id_token: idToken }),
+    });
+    const data = await handleResponse<AuthTokens>(response);
     return data.data;
   },
 };

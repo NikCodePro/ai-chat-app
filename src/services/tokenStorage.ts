@@ -10,6 +10,8 @@ export type StoredUser = {
   username: string;
   email: string | null;
   phone: string | null;
+  auth_provider?: string;
+  email_verified?: boolean;
 };
 
 export const tokenStorage = {

@@ -1,7 +1,7 @@
 import { ApiError } from "./api";
 
-export const CHAT_API_BASE_URL = "https://ai-chat-backend-rkjk.onrender.com/api/v1";
-export const CHAT_WS_URL = "ws://ai-chat-backend-rkjk.onrender.com/api/v1/ws/chat";
+export const CHAT_API_BASE_URL = "http://192.168.1.9:8000/api/v1";
+export const CHAT_WS_URL = "ws://192.168.1.9:8000/api/v1/ws/chat";
 
 export type LLMProvider = "mistral" | "openai" | "gemini";
 

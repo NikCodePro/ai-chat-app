@@ -29,6 +29,7 @@ type AppState = {
     code: string,
     password: string,
   ) => Promise<void>;
+  googleAuth: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   clearError: () => void;
@@ -191,6 +192,35 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "2FA verification failed";
+      set({ error: message });
+      throw err;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  googleAuth: async (idToken: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const data = await authApi.googleAuth(idToken);
+      await tokenStorage.setTokens(data.access_token, data.refresh_token, {
+        id: data.user.id,
+        name: data.user.name,
+        username: data.user.username,
+        email: data.user.email,
+        phone: data.user.phone,
+        auth_provider: data.user.auth_provider,
+        email_verified: data.user.email_verified,
+      });
+      set({
+        isAuthenticated: true,
+        user: data.user,
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+      });
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Google authentication failed";
       set({ error: message });
       throw err;
     } finally {

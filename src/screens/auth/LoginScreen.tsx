@@ -1,5 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import * as AuthSession from "expo-auth-session";
+import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { CustomButton } from "../../components/CustomButton";
@@ -12,15 +14,43 @@ import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
 
+WebBrowser.maybeCompleteAuthSession();
+
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 
 export function LoginScreen({ navigation }: Props) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const login = useAppStore((s) => s.login);
+  const googleAuth = useAppStore((s) => s.googleAuth);
   const isLoading = useAppStore((s) => s.isLoading);
   const error = useAppStore((s) => s.error);
   const clearError = useAppStore((s) => s.clearError);
+
+  // Google OAuth configuration
+  const [request, response, promptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId: "985688017742-ko0ptvnip8ms5ti8aakjf37hdqk1bgt4.apps.googleusercontent.com", // Replace with your actual Google Client ID
+      scopes: ["openid", "profile", "email"],
+      responseType: AuthSession.ResponseType.Token,
+      redirectUri: AuthSession.makeRedirectUri(),
+    },
+    { authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth" },
+  );
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const result = await promptAsync();
+      if (result.type === "success" && result.params.id_token) {
+        await googleAuth(result.params.id_token);
+        // Navigation happens automatically on successful auth
+      } else if (result.type === "error") {
+        Alert.alert("Error", "Google sign-in was cancelled or failed");
+      }
+    } catch (err) {
+      Alert.alert("Error", "Google sign-in failed");
+    }
+  };
 
   const handleSignIn = async () => {
     if (!identifier.trim()) {
@@ -76,7 +106,11 @@ export function LoginScreen({ navigation }: Props) {
               onPress={handleSignIn}
               disabled={isLoading}
             />
-            <Pressable style={styles.googleBtn} disabled={isLoading}>
+            <Pressable
+              style={styles.googleBtn}
+              onPress={handleGoogleSignIn}
+              disabled={isLoading || !request}
+            >
               <Ionicons name="logo-google" size={18} color={colors.text} />
               <Text style={styles.googleText}>Sign in with Google</Text>
             </Pressable>
