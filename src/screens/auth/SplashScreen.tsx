@@ -37,7 +37,6 @@ export function SplashScreen() {
       <LinearGradient colors={[colors.secondary, colors.primary]} style={styles.logo}>
         <Text style={styles.logoText}>AI</Text>
       </LinearGradient>
-      <Text style={styles.title}>Nova Assistant</Text>
       <Text style={styles.caption}>Warming up your workspace</Text>
     </View>
   );

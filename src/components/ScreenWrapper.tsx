@@ -1,6 +1,12 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { ReactNode } from 'react';
-import { SafeAreaView, StyleSheet, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { colors } from '../theme/colors';
 
 type ScreenWrapperProps = {
@@ -13,7 +19,13 @@ export function ScreenWrapper({ children }: ScreenWrapperProps) {
       <LinearGradient colors={['#080A10', '#0D1320', '#111A2F']} style={styles.gradient}>
         <View style={styles.glowTop} />
         <View style={styles.glowBottom} />
-        {children}
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 40}
+        >
+          <View style={styles.content}>{children}</View>
+        </KeyboardAvoidingView>
       </LinearGradient>
     </SafeAreaView>
   );
@@ -25,6 +37,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   gradient: {
+    flex: 1,
+  },
+  keyboardAvoid: {
+    flex: 1,
+  },
+  content: {
     flex: 1,
   },
   glowTop: {

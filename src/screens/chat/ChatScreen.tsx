@@ -184,6 +184,7 @@ export function ChatScreen() {
           renderItem={({ item }) => (
             <ChatBubble role={item.role} message={item.text} />
           )}
+          style={styles.messagesList}
           contentContainerStyle={styles.list}
           ListEmptyComponent={
             !isChatLoading && currentChat ? (
@@ -317,6 +318,9 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingBottom: spacing.md,
+  },
+  messagesList: {
+    flex: 1,
   },
   emptyState: {
     flex: 1,
