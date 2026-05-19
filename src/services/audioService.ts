@@ -48,12 +48,51 @@ export class AudioService {
     LiveAudioStream.stop();
   }
 
+  private addWavHeader(pcmBuffer: Buffer, sampleRate: number = 24000): Buffer {
+    const header = Buffer.alloc(44);
+    const dataLength = pcmBuffer.length;
+    
+    // RIFF identifier
+    header.write("RIFF", 0);
+    // file length minus RIFF identifier and size fields (36 + dataLength)
+    header.writeUInt32LE(36 + dataLength, 4);
+    // RIFF type
+    header.write("WAVE", 8);
+    // format chunk identifier
+    header.write("fmt ", 12);
+    // format chunk length
+    header.writeUInt32LE(16, 16);
+    // sample format (raw PCM = 1)
+    header.writeUInt16LE(1, 20);
+    // channel count (1 = mono)
+    header.writeUInt16LE(1, 22);
+    // sample rate
+    header.writeUInt32LE(sampleRate, 24);
+    // byte rate = sampleRate * channels * bitsPerSample / 8
+    header.writeUInt32LE(sampleRate * 1 * 16 / 8, 28);
+    // block align = channels * bitsPerSample / 8
+    header.writeUInt16LE(1 * 16 / 8, 32);
+    // bits per sample
+    header.writeUInt16LE(16, 34);
+    // data chunk identifier
+    header.write("data", 36);
+    // data chunk length
+    header.writeUInt32LE(dataLength, 40);
+
+    return Buffer.concat([header, pcmBuffer]);
+  }
+
   public queueAudioChunk(base64Data: string) {
-    // Wrap raw PCM16 chunk in WAV header if needed, assuming backend sends playable format or we do it here.
-    // For now, we assume the backend sends a playable format (e.g., MP3/WAV base64 chunk)
-    // If it's raw PCM, it needs a WAV header wrapper before playing with expo-av.
-    this.playbackQueue.push(base64Data);
-    this.playNextChunk();
+    try {
+      const pcmBuffer = Buffer.from(base64Data, "base64");
+      // Gemini output rate is 24000Hz (24kHz)
+      const wavBuffer = this.addWavHeader(pcmBuffer, 24000);
+      const wavBase64 = wavBuffer.toString("base64");
+      this.playbackQueue.push(wavBase64);
+      this.playNextChunk();
+    } catch (e) {
+      console.error("Error wrapping PCM chunk in WAV header:", e);
+    }
   }
 
   public async stopPlayback() {
