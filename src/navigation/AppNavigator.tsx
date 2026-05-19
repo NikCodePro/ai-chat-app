@@ -11,6 +11,7 @@ import { SignupPhoneScreen } from "../screens/auth/SignupPhoneScreen";
 import { SignupScreen } from "../screens/auth/SignupScreen";
 import { SplashScreen } from "../screens/auth/SplashScreen";
 import { ChatScreen } from "../screens/chat/ChatScreen";
+import { VoiceCallScreen } from "../screens/chat/VoiceCallScreen";
 import { HomeScreen } from "../screens/home/HomeScreen";
 import { useAppStore } from "../store/appStore";
 import { colors } from "../theme/colors";
@@ -55,6 +56,11 @@ function MainNavigator() {
     >
       <MainStack.Screen name="Home" component={HomeScreen} />
       <MainStack.Screen name="Chat" component={ChatScreen} />
+      <MainStack.Screen 
+        name="VoiceCall" 
+        component={VoiceCallScreen} 
+        options={{ presentation: 'fullScreenModal', headerShown: false }} 
+      />
     </MainStack.Navigator>
   );
 }
