@@ -75,22 +75,6 @@ export function HomeScreen({ navigation }: Props) {
           </GradientCard>
         </Pressable>
 
-        <Pressable
-          style={styles.cardWrap}
-          onPress={() => navigation.navigate("Voice")}
-        >
-          <GradientCard>
-            <View style={styles.cardRow}>
-              <Ionicons name="radio-outline" size={26} color={colors.accent} />
-              <View style={styles.cardText}>
-                <Text style={styles.cardTitle}>AI Voice Call</Text>
-                <Text style={styles.cardDesc}>
-                  Live call UI with animated wave and focused controls
-                </Text>
-              </View>
-            </View>
-          </GradientCard>
-        </Pressable>
       </View>
     </ScreenWrapper>
   );

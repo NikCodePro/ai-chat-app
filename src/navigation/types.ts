@@ -26,5 +26,4 @@ export type AuthStackParamList = {
 export type MainStackParamList = {
   Home: undefined;
   Chat: undefined;
-  Voice: undefined;
 };

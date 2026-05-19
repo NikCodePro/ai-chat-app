@@ -12,19 +12,29 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.sankatseva",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Sankat Seva needs microphone access for AI voice calls."
       }
     },
     "android": {
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.sankatseva"
+      "package": "com.sankatseva",
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "static"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Sankat Seva to access your microphone for voice calls."
+        }
+      ]
     ],
     "experiments": {
       "reactCompiler": true

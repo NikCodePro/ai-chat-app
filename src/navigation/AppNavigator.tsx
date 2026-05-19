@@ -12,7 +12,6 @@ import { SignupScreen } from "../screens/auth/SignupScreen";
 import { SplashScreen } from "../screens/auth/SplashScreen";
 import { ChatScreen } from "../screens/chat/ChatScreen";
 import { HomeScreen } from "../screens/home/HomeScreen";
-import { VoiceScreen } from "../screens/voice/VoiceScreen";
 import { useAppStore } from "../store/appStore";
 import { colors } from "../theme/colors";
 import { AuthStackParamList, MainStackParamList } from "./types";
@@ -56,7 +55,6 @@ function MainNavigator() {
     >
       <MainStack.Screen name="Home" component={HomeScreen} />
       <MainStack.Screen name="Chat" component={ChatScreen} />
-      <MainStack.Screen name="Voice" component={VoiceScreen} />
     </MainStack.Navigator>
   );
 }
