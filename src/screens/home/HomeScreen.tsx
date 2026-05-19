@@ -75,6 +75,27 @@ export function HomeScreen({ navigation }: Props) {
           </GradientCard>
         </Pressable>
 
+        <Pressable
+          style={styles.cardWrap}
+          onPress={() => navigation.navigate("VoiceCall")}
+        >
+          <GradientCard>
+            <View style={styles.cardRow}>
+              <Ionicons
+                name="mic-outline"
+                size={26}
+                color={colors.accent || colors.primary}
+              />
+              <View style={styles.cardText}>
+                <Text style={styles.cardTitle}>AI Voice Call</Text>
+                <Text style={styles.cardDesc}>
+                  Realtime, low-latency conversational voice assistant flow
+                </Text>
+              </View>
+            </View>
+          </GradientCard>
+        </Pressable>
+
       </View>
     </ScreenWrapper>
   );
