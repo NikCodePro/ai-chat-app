@@ -2,7 +2,7 @@
   "expo": {
     "name": "sankat seva",
     "slug": "ai-chat-app",
-    "icon": "./assets/icon.jpeg",
+    "icon": "./assets/icon.png",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "sankatseva",
