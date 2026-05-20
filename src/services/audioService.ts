@@ -1,12 +1,29 @@
 import { Audio } from "expo-av";
 import LiveAudioStream from "react-native-live-audio-stream";
 import { Buffer } from "buffer";
+import { useDebugStore } from "../store/useDebugStore";
+
+import { debugService } from "./debugService";
 
 export class AudioService {
-  private playbackQueue: string[] = [];
+  private playbackQueue: { id: number | string; data: string }[] = [];
   private isPlaying = false;
   private currentSound: Audio.Sound | null = null;
+  private preloadedSound: Audio.Sound | null = null;
+  private preloadedChunk: string | null = null;
   private isRecording = false;
+  private rxChunkIdCounter = 0;
+  private isGated = false; // true while AI is speaking → drop mic data
+  private onChunkCallback: ((base64Data: string) => void) | null = null;
+
+  public setGated(gated: boolean) {
+    this.isGated = gated;
+    if (gated) {
+      console.log("[AUDIO-GATE] Mic output gated — dropping chunks");
+    } else {
+      console.log("[AUDIO-GATE] Mic output un-gated — resuming send");
+    }
+  }
 
   constructor() {
     this.init();
@@ -22,27 +39,33 @@ export class AudioService {
 
     const options = {
       sampleRate: 16000,
-      channels: 1,
-      bitsPerSample: 16,
-      audioSource: 6,
-      bufferSize: 4096,
+      channels: 1 as 1 | 2,
+      bitsPerSample: 16 as 8 | 16,
+      audioSource: 6, // VOICE_RECOGNITION for ultra-low latency speech processing
+      wavFile: "audio.wav",
+      bufferSize: 8192,
     };
 
     LiveAudioStream.init(options);
+
+    // Register listener exactly ONCE to avoid double-events when starting/stopping the stream
+    LiveAudioStream.on("data", (data: string) => {
+      if (this.isGated) return; // silently drop while AI speaks
+      if (this.onChunkCallback) {
+        this.onChunkCallback(data);
+      }
+    });
   }
 
   public startRecording(onChunk: (base64Data: string) => void) {
+    this.onChunkCallback = onChunk;
     if (this.isRecording) return;
     this.isRecording = true;
-
-    LiveAudioStream.on("data", (data: string) => {
-      onChunk(data);
-    });
-
     LiveAudioStream.start();
   }
 
   public stopRecording() {
+    this.onChunkCallback = null;
     if (!this.isRecording) return;
     this.isRecording = false;
     LiveAudioStream.stop();
@@ -82,59 +105,130 @@ export class AudioService {
     return Buffer.concat([header, pcmBuffer]);
   }
 
-  public queueAudioChunk(base64Data: string) {
+  private async preloadNextIfNeeded() {
+    if (this.preloadedSound || this.playbackQueue.length === 0) return;
+    
+    const nextChunk = this.playbackQueue[0];
     try {
+      const uri = `data:audio/wav;base64,${nextChunk.data}`;
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: false, progressUpdateIntervalMillis: 50 }
+      );
+      
+      // Check if queue wasn't cleared/altered while we were asynchronously loading
+      if (this.playbackQueue.length > 0 && this.playbackQueue[0].id === nextChunk.id) {
+        this.preloadedSound = sound;
+        this.preloadedChunk = nextChunk.data;
+      } else {
+        await sound.unloadAsync().catch(() => {});
+      }
+    } catch (e) {
+      console.error("Error preloading next audio chunk:", e);
+    }
+  }
+
+  public queueAudioChunk(base64Data: string, chunkId?: number) {
+    try {
+      const id = chunkId ?? ++this.rxChunkIdCounter;
       const pcmBuffer = Buffer.from(base64Data, "base64");
       // Gemini output rate is 24000Hz (24kHz)
       const wavBuffer = this.addWavHeader(pcmBuffer, 24000);
       const wavBase64 = wavBuffer.toString("base64");
-      this.playbackQueue.push(wavBase64);
-      this.playNextChunk();
+      
+      this.playbackQueue.push({ id, data: wavBase64 });
+      debugService.onQueueUpdate(this.playbackQueue.length);
+      
+      if (!this.isPlaying) {
+        this.playNextChunk();
+      } else {
+        this.preloadNextIfNeeded();
+      }
     } catch (e) {
+      debugService.onDroppedChunk();
       console.error("Error wrapping PCM chunk in WAV header:", e);
     }
   }
 
   public async stopPlayback() {
     this.playbackQueue = [];
+    debugService.onQueueUpdate(0);
     if (this.currentSound) {
-      await this.currentSound.stopAsync();
-      await this.currentSound.unloadAsync();
+      await this.currentSound.stopAsync().catch(() => {});
+      await this.currentSound.unloadAsync().catch(() => {});
       this.currentSound = null;
     }
+    if (this.preloadedSound) {
+      await this.preloadedSound.unloadAsync().catch(() => {});
+      this.preloadedSound = null;
+    }
+    this.preloadedChunk = null;
     this.isPlaying = false;
+    debugService.onPlaybackFinish();
   }
 
   private async playNextChunk() {
-    if (this.isPlaying || this.playbackQueue.length === 0) return;
+    if (this.isPlaying || this.playbackQueue.length === 0) {
+      if (this.playbackQueue.length === 0) {
+        debugService.onPlaybackFinish();
+      }
+      return;
+    }
 
     this.isPlaying = true;
     const chunk = this.playbackQueue.shift();
+    debugService.onQueueUpdate(this.playbackQueue.length);
 
     if (!chunk) {
       this.isPlaying = false;
+      debugService.onPlaybackFinish();
       return;
     }
 
     try {
-      // Assuming backend chunk is already a valid WAV/MP3 base64 or we wrap it in a data URI
-      // If it's pure PCM16, we would add a WAV header.
-      // We will try standard URI. If it's PCM, we must convert it.
-      const uri = `data:audio/wav;base64,${chunk}`;
+      let sound: Audio.Sound;
       
-      const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
+      if (this.preloadedSound && this.preloadedChunk === chunk.data) {
+        sound = this.preloadedSound;
+        this.preloadedSound = null;
+        this.preloadedChunk = null;
+        await sound.playAsync();
+      } else {
+        // If we had a preloaded sound but it didn't match, clean it up
+        if (this.preloadedSound) {
+          this.preloadedSound.unloadAsync().catch(() => {});
+          this.preloadedSound = null;
+          this.preloadedChunk = null;
+        }
+        
+        const uri = `data:audio/wav;base64,${chunk.data}`;
+        const result = await Audio.Sound.createAsync(
+            { uri }, 
+            { shouldPlay: true, progressUpdateIntervalMillis: 50 }
+        );
+        sound = result.sound;
+      }
+      
       this.currentSound = sound;
+      debugService.onPlaybackStart(chunk.id);
       
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-          this.currentSound = null;
+          sound.unloadAsync().catch(() => {});
+          if (this.currentSound === sound) {
+            this.currentSound = null;
+          }
           this.isPlaying = false;
           this.playNextChunk();
         }
       });
+      
+      // Preload the next chunk in the queue immediately
+      this.preloadNextIfNeeded();
+      
     } catch (e) {
       console.error("Audio playback error", e);
+      debugService.onDroppedChunk();
       this.isPlaying = false;
       this.playNextChunk(); // Skip to next on error
     }

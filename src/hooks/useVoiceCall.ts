@@ -1,7 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { NativeModules } from "react-native";
+import InCallManager from "react-native-incall-manager";
 import { audioService } from "../services/audioService";
 import { voiceWsService } from "../services/websocketService";
 import { useAppStore } from "../store/appStore";
+
+const hasInCallManager = !!NativeModules.InCallManager;
 
 export type CallStatus =
   | "Connecting..."
@@ -14,6 +18,7 @@ export function useVoiceCall() {
   const [status, setStatus] = useState<CallStatus>("Disconnected");
   const [transcript, setTranscript] = useState<string>("");
   const [isMuted, setIsMuted] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const token = useAppStore((s) => s.accessToken);
 
   useEffect(() => {
@@ -34,31 +39,35 @@ export function useVoiceCall() {
       setStatus("Disconnected");
       audioService.stopRecording();
       audioService.stopPlayback();
+      audioService.setGated(false);
     };
 
     // The websocket service intercepts binary arrays and emits "binary_audio"
-    const handleBinaryAudio = (payload: { audio: string }) => {
+    const handleBinaryAudio = (payload: { audio: string; chunk_id?: number }) => {
       if (payload.audio) {
-        audioService.queueAudioChunk(payload.audio);
+        audioService.queueAudioChunk(payload.audio, payload.chunk_id);
       }
     };
 
     const handleAiTranscript = (payload: { text: string }) => {
       setTranscript((prev) => prev + " " + payload.text);
     };
+    const handleAiStartedSpeaking = () => {
+      audioService.setGated(true);
+      voiceWsService.sendPauseStream();
+      setStatus("AI Speaking...");
+    };
 
-    const handleAiStartedSpeaking = () => setStatus("AI Speaking...");
-    
     const handleAiFinishedSpeaking = () => {
       setStatus("Listening...");
-      if (!isMuted) {
-        startListening();
-      }
+      audioService.setGated(false);
+      voiceWsService.sendResumeStream();
     };
 
     const handleAiInterrupted = () => {
-      // AI was interrupted by user, clear the queue
       audioService.stopPlayback();
+      audioService.setGated(false);
+      voiceWsService.sendResumeStream();
       setStatus("Listening...");
     };
 
@@ -88,17 +97,69 @@ export function useVoiceCall() {
     };
   }, [token, isMuted]);
 
+  const setSpeakerphone = useCallback(async (on: boolean) => {
+    if (hasInCallManager && InCallManager && typeof InCallManager.setSpeakerphoneOn === "function") {
+      try {
+        InCallManager.setSpeakerphoneOn(on);
+        return;
+      } catch (e) {
+        // Silently fail and fallback
+      }
+    }
+
+    // Fallback to Expo AV if InCallManager native module is null (e.g. in Expo Go)
+    try {
+      const { Audio } = require("expo-av");
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        playThroughEarpieceAndroid: !on, // earpiece is opposite of speakerphone
+      });
+    } catch (e) {
+      // Silently fail
+    }
+  }, []);
+
   const startCall = useCallback(() => {
     if (!token) return;
     setStatus("Connecting...");
+
+    // Initialize InCallManager for audio routing and proximity screen-off
+    if (hasInCallManager && InCallManager && typeof InCallManager.start === "function") {
+      try {
+        InCallManager.start({ media: "audio", auto: true });
+        InCallManager.setKeepScreenOn(true);
+        if (typeof InCallManager.startProximitySensor === "function") {
+          InCallManager.startProximitySensor();
+        }
+      } catch (e) {
+        // Silently fail
+      }
+    }
+
+    setSpeakerphone(isSpeakerOn);
+
     voiceWsService.connect(token);
-  }, [token]);
+  }, [token, isSpeakerOn, setSpeakerphone]);
 
   const endCall = useCallback(() => {
     audioService.stopRecording();
     audioService.stopPlayback();
     voiceWsService.sendStopStream();
     voiceWsService.disconnect();
+
+    // Clean up InCallManager
+    if (hasInCallManager && InCallManager && typeof InCallManager.stop === "function") {
+      try {
+        if (typeof InCallManager.stopProximitySensor === "function") {
+          InCallManager.stopProximitySensor();
+        }
+        InCallManager.stop();
+      } catch (e) {
+        // Silently fail
+      }
+    }
+
     setStatus("Disconnected");
   }, []);
 
@@ -110,16 +171,23 @@ export function useVoiceCall() {
     } else {
       setIsMuted(true);
       audioService.stopRecording();
-      voiceWsService.sendStopStream();
-      setStatus("Disconnected"); // Or a separate "Muted" status
+      // Don't send client_stop_stream — that kills the whole session.
+      // Just stop recording locally; backend sees no more audio chunks.
+      setStatus("AI Thinking...");
     }
   }, [isMuted]);
+
+  const toggleSpeaker = useCallback(() => {
+    const newState = !isSpeakerOn;
+    setIsSpeakerOn(newState);
+    setSpeakerphone(newState);
+  }, [isSpeakerOn, setSpeakerphone]);
 
   const startListening = () => {
     setTranscript("");
     voiceWsService.sendStartStream();
-    audioService.startRecording((base64Chunk) => {
-      voiceWsService.sendAudioChunk(base64Chunk);
+    audioService.startRecording((base64Data) => {
+      voiceWsService.sendAudioChunk(base64Data);
     });
   };
 
@@ -127,8 +195,10 @@ export function useVoiceCall() {
     status,
     transcript,
     isMuted,
+    isSpeakerOn,
     startCall,
     endCall,
     toggleMute,
+    toggleSpeaker,
   };
 }

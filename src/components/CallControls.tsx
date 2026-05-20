@@ -5,11 +5,19 @@ import { colors } from "../theme/colors";
 
 interface CallControlsProps {
   isMuted: boolean;
+  isSpeakerOn: boolean;
   onToggleMute: () => void;
+  onToggleSpeaker: () => void;
   onEndCall: () => void;
 }
 
-export function CallControls({ isMuted, onToggleMute, onEndCall }: CallControlsProps) {
+export function CallControls({
+  isMuted,
+  isSpeakerOn,
+  onToggleMute,
+  onToggleSpeaker,
+  onEndCall,
+}: CallControlsProps) {
   return (
     <View style={styles.container}>
       <Pressable
@@ -20,6 +28,17 @@ export function CallControls({ isMuted, onToggleMute, onEndCall }: CallControlsP
           name={isMuted ? "mic-off" : "mic"}
           size={32}
           color={isMuted ? colors.danger : colors.text}
+        />
+      </Pressable>
+
+      <Pressable
+        style={[styles.button, !isSpeakerOn && styles.buttonInactive]}
+        onPress={onToggleSpeaker}
+      >
+        <Ionicons
+          name={isSpeakerOn ? "volume-high" : "volume-mute"}
+          size={32}
+          color={isSpeakerOn ? colors.primary : colors.text}
         />
       </Pressable>
 
@@ -56,5 +75,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger,
     borderColor: colors.danger,
     transform: [{ rotate: "135deg" }], // hang up icon orientation
+  },
+  buttonInactive: {
+    backgroundColor: `${colors.text}10`,
+    borderColor: colors.cardBorder,
   },
 });

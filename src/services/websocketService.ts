@@ -1,4 +1,6 @@
 import { Buffer } from "buffer";
+import { useDebugStore } from "../store/useDebugStore";
+import { debugService } from "./debugService";
 
 type VoiceEventCallback = (event: any) => void;
 
@@ -18,30 +20,37 @@ export class VoiceWebSocketService {
     }
 
     this.ws = new WebSocket(`${this.url}?token=${token}`);
-    // Handle raw binary frames for audio
+    // We still support binary frames just in case, but primary audio will be JSON
     this.ws.binaryType = "arraybuffer";
 
     this.ws.onopen = () => {
       this.isConnected = true;
-      // Note: The server also sends a connection_established event,
-      // but we can emit a local connected event immediately if needed.
+      debugService.updateMetric("reconnects", 0); // or increment if tracking lifetime
     };
 
     this.ws.onmessage = (event) => {
       if (typeof event.data === "string") {
         try {
           const data = JSON.parse(event.data);
-          // Use `type` property as defined in the API doc
-          this.emit(data.type, data);
+          if (data.type === "server_audio") {
+             const recvTs = Date.now();
+             const serverTs = data.server_timestamp;
+             const latency = recvTs - serverTs;
+             useDebugStore.getState().setNetworkLatency(latency);
+             console.log(`[DEBUG-FRONTEND-RX] ai_audio_chunk ${data.chunk_id} | backend_ts: ${serverTs} | recv_ts: ${recvTs} | network_latency: ${latency}ms | size: ${data.audio.length} bytes`);
+             debugService.onWsReceive(data.chunk_id, data.timestamp, data.audio.length, data.server_timestamp);
+             this.emit("binary_audio", { audio: data.audio, chunk_id: data.chunk_id });
+          } else {
+             this.emit(data.type, data);
+          }
         } catch (err) {
           console.error("Failed to parse websocket message", err);
         }
       } else {
-        // Binary frame received (from Server-to-Client "Receive AI Audio")
+        // Fallback for raw binary frame if server still sends it
         try {
           const buffer = Buffer.from(event.data as ArrayBuffer);
           const base64Audio = buffer.toString("base64");
-          // Emit a custom local event for the binary chunk
           this.emit("binary_audio", { audio: base64Audio });
         } catch (err) {
           console.error("Failed to process binary audio frame", err);
@@ -73,14 +82,31 @@ export class VoiceWebSocketService {
 
   public sendAudioChunk(base64Data: string) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      // Decode Base64 to raw Uint8Array buffer and send as Binary frame
-      const buffer = Buffer.from(base64Data, "base64");
-      this.ws.send(buffer);
+      const chunkId = debugService.getNextTxChunkId();
+      const timestamp = Date.now();
+      debugService.onMicrophoneChunk();
+      debugService.onWsSend(chunkId, timestamp, base64Data.length);
+      
+      const payload = {
+        type: "client_audio",
+        audio: base64Data,
+        chunk_id: chunkId,
+        timestamp: timestamp
+      };
+      this.ws.send(JSON.stringify(payload));
     }
   }
 
   public sendStopStream() {
     this.sendMessage({ type: "client_stop_stream" });
+  }
+
+  public sendPauseStream() {
+    this.sendMessage({ type: "client_pause_stream" });
+  }
+
+  public sendResumeStream() {
+    this.sendMessage({ type: "client_resume_stream" });
   }
 
   private sendMessage(data: any) {

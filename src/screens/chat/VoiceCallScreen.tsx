@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet, Text, SafeAreaView } from "react-native";
+import { View, StyleSheet, Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useVoiceCall } from "../../hooks/useVoiceCall";
 import { AIAvatar } from "../../components/AIAvatar";
 import { VoiceWave } from "../../components/VoiceWave";
@@ -7,9 +8,19 @@ import { CallControls } from "../../components/CallControls";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
 import { useNavigation } from "@react-navigation/native";
+import { DebugOverlay } from "../../components/DebugOverlay";
 
 export function VoiceCallScreen() {
-  const { status, transcript, isMuted, startCall, endCall, toggleMute } = useVoiceCall();
+  const {
+    status,
+    transcript,
+    isMuted,
+    isSpeakerOn,
+    startCall,
+    endCall,
+    toggleMute,
+    toggleSpeaker,
+  } = useVoiceCall();
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -33,6 +44,7 @@ export function VoiceCallScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <DebugOverlay />
       <View style={styles.header}>
         <Text style={styles.statusText}>{status}</Text>
       </View>
@@ -56,7 +68,9 @@ export function VoiceCallScreen() {
       <View style={styles.footer}>
         <CallControls
           isMuted={isMuted}
+          isSpeakerOn={isSpeakerOn}
           onToggleMute={toggleMute}
+          onToggleSpeaker={toggleSpeaker}
           onEndCall={handleEndCall}
         />
       </View>
