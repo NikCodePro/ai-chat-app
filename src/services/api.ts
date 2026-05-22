@@ -1,4 +1,5 @@
 // API Base Configuration
+// export const API_BASE_URL = "https://api.sankatseva.com/api/v1";
 export const API_BASE_URL = "http://192.168.1.9:8000/api/v1";
 
 export type ApiResponse<T> = {
@@ -38,8 +39,8 @@ export interface AuthTokens {
   token_type: string;
 }
 
-export interface LoginResponse extends AuthTokens {}
-export interface SignupCompleteResponse extends AuthTokens {}
+export type LoginResponse = AuthTokens;
+export type SignupCompleteResponse = AuthTokens;
 
 // Error handling
 export class ApiError extends Error {
@@ -53,14 +54,81 @@ export class ApiError extends Error {
   }
 }
 
+type ErrorPayload = {
+  message?: unknown;
+  msg?: unknown;
+  detail?: unknown;
+  error?: unknown;
+  errors?: unknown;
+  data?: unknown;
+};
+
+function getPayloadMessage(payload: unknown): string | null {
+  if (typeof payload === "string") {
+    return payload;
+  }
+
+  if (Array.isArray(payload)) {
+    const messages = payload
+      .map((item) => getPayloadMessage(item))
+      .filter((item): item is string => !!item);
+
+    return messages.length > 0 ? messages.join("\n") : null;
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const data = payload as ErrorPayload;
+  const namedMessage =
+    getPayloadMessage(data.message) ||
+    getPayloadMessage(data.msg) ||
+    getPayloadMessage(data.detail) ||
+    getPayloadMessage(data.error) ||
+    getPayloadMessage(data.errors) ||
+    getPayloadMessage(data.data);
+
+  if (namedMessage) {
+    return namedMessage;
+  }
+
+  const nestedMessages = Object.values(payload)
+    .map((value) => getPayloadMessage(value))
+    .filter((value): value is string => !!value);
+
+  return nestedMessages.length > 0 ? [...new Set(nestedMessages)].join("\n") : null;
+}
+
+export function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof ApiError) {
+    return error.message || getPayloadMessage(error.data) || fallback;
+  }
+
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+
+  return getPayloadMessage(error) || fallback;
+}
+
 async function handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
-  const data = await response.json();
+  const rawText = await response.text();
+  const data = rawText
+    ? (() => {
+        try {
+          return JSON.parse(rawText);
+        } catch {
+          return { message: rawText };
+        }
+      })()
+    : {};
 
   if (!response.ok) {
     throw new ApiError(
       response.status,
-      data.message || "API request failed",
-      data.data,
+      getPayloadMessage(data) || "API request failed",
+      data,
     );
   }
 
@@ -157,11 +225,12 @@ export const authApi = {
   },
 
   logout: async (refreshToken: string): Promise<void> => {
-    await fetch(`${API_BASE_URL}/auth/logout`, {
+    const response = await fetch(`${API_BASE_URL}/auth/logout`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
+    await handleResponse<void>(response);
   },
 
   getCurrentUser: async (accessToken: string): Promise<User> => {
@@ -176,7 +245,6 @@ export const authApi = {
     return data.data;
   },
 
-  // Google authentication
   googleAuth: async (idToken: string): Promise<AuthTokens> => {
     const response = await fetch(`${API_BASE_URL}/auth/google`, {
       method: "POST",
@@ -185,5 +253,39 @@ export const authApi = {
     });
     const data = await handleResponse<AuthTokens>(response);
     return data.data;
+  },
+
+  // Profile Management
+  updateProfile: async (
+    accessToken: string,
+    name?: string,
+    username?: string,
+  ): Promise<User> => {
+    const response = await fetch(`${API_BASE_URL}/users/me`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ name, username }),
+    });
+    const data = await handleResponse<User>(response);
+    return data.data;
+  },
+
+  changePassword: async (
+    accessToken: string,
+    newPassword: string,
+  ): Promise<void> => {
+    await fetch(`${API_BASE_URL}/auth/change-password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        new_password: newPassword,
+      }),
+    }).then(handleResponse);
   },
 };

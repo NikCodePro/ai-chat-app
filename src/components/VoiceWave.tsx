@@ -6,7 +6,9 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
+  withDelay,
   Easing,
+  cancelAnimation,
 } from "react-native-reanimated";
 import { colors } from "../theme/colors";
 
@@ -15,47 +17,112 @@ interface VoiceWaveProps {
   isSpeaking: boolean;
 }
 
-const NUM_BARS = 5;
+const NUM_BARS = 7;
 
 export function VoiceWave({ isActive, isSpeaking }: VoiceWaveProps) {
   return (
     <View style={styles.container}>
       {Array.from({ length: NUM_BARS }).map((_, i) => (
-        <WaveBar key={i} index={i} isActive={isActive} isSpeaking={isSpeaking} />
+        <WaveBar
+          key={i}
+          index={i}
+          total={NUM_BARS}
+          isActive={isActive}
+          isSpeaking={isSpeaking}
+        />
       ))}
     </View>
   );
 }
 
-function WaveBar({ index, isActive, isSpeaking }: { index: number; isActive: boolean; isSpeaking: boolean }) {
-  const height = useSharedValue(20);
+function WaveBar({
+  index,
+  total,
+  isActive,
+  isSpeaking,
+}: {
+  index: number;
+  total: number;
+  isActive: boolean;
+  isSpeaking: boolean;
+}) {
+  const height = useSharedValue(4);
+  const opacity = useSharedValue(0.3);
+
+  // Center bars are taller, edge bars are shorter (bell curve effect)
+  const center = (total - 1) / 2;
+  const distFromCenter = Math.abs(index - center) / center; // 0..1
+  const heightMultiplier = 1 - distFromCenter * 0.5;
 
   useEffect(() => {
-    if (isSpeaking || isActive) {
-      const delay = index * 100;
-      const duration = 400 + Math.random() * 200;
-      const targetHeight = isSpeaking ? 60 + Math.random() * 40 : 30 + Math.random() * 20;
+    if (isSpeaking) {
+      // AI speaking: energetic, fast, tall bars with staggered timing
+      const delay = index * 60;
+      const baseDuration = 250 + Math.random() * 150;
+      const maxHeight = (55 + Math.random() * 30) * heightMultiplier;
 
-      setTimeout(() => {
-        height.value = withRepeat(
+      height.value = withDelay(
+        delay,
+        withRepeat(
           withSequence(
-            withTiming(targetHeight, { duration, easing: Easing.out(Easing.ease) }),
-            withTiming(20, { duration, easing: Easing.in(Easing.ease) })
+            withTiming(maxHeight, {
+              duration: baseDuration,
+              easing: Easing.out(Easing.cubic),
+            }),
+            withTiming(8 + Math.random() * 8, {
+              duration: baseDuration * 1.2,
+              easing: Easing.inOut(Easing.ease),
+            })
           ),
           -1,
           true
-        );
-      }, delay);
+        )
+      );
+      opacity.value = withTiming(1, { duration: 200 });
+    } else if (isActive) {
+      // Listening: gentle, slow breathing animation
+      const delay = index * 120;
+      const baseDuration = 800 + Math.random() * 400;
+      const maxHeight = (18 + Math.random() * 14) * heightMultiplier;
+
+      height.value = withDelay(
+        delay,
+        withRepeat(
+          withSequence(
+            withTiming(maxHeight, {
+              duration: baseDuration,
+              easing: Easing.inOut(Easing.ease),
+            }),
+            withTiming(6, {
+              duration: baseDuration,
+              easing: Easing.inOut(Easing.ease),
+            })
+          ),
+          -1,
+          true
+        )
+      );
+      opacity.value = withTiming(0.7, { duration: 300 });
     } else {
-      height.value = withTiming(20, { duration: 300 });
+      // Idle
+      cancelAnimation(height);
+      height.value = withTiming(4, { duration: 400 });
+      opacity.value = withTiming(0.3, { duration: 400 });
     }
   }, [isActive, isSpeaking, index]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     height: height.value,
+    opacity: opacity.value,
   }));
 
-  return <Animated.View style={[styles.bar, animatedStyle]} />;
+  const barColor = isSpeaking ? colors.accent : colors.primary;
+
+  return (
+    <Animated.View
+      style={[styles.bar, { backgroundColor: barColor }, animatedStyle]}
+    />
+  );
 }
 
 const styles = StyleSheet.create({
@@ -63,12 +130,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    height: 100,
-    gap: 8,
+    height: 80,
+    gap: 5,
   },
   bar: {
-    width: 6,
-    borderRadius: 3,
-    backgroundColor: colors.primary,
+    width: 4,
+    borderRadius: 2,
+    minHeight: 4,
   },
 });

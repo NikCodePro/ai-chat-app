@@ -6,6 +6,7 @@ import { CustomInput } from "../../components/CustomInput";
 import { GradientCard } from "../../components/GradientCard";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { AuthStackParamList } from "../../navigation/types";
+import { getErrorMessage } from "../../services/api";
 import { useAppStore } from "../../store/appStore";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
@@ -17,8 +18,8 @@ export function OtpVerifyScreen({ navigation, route }: Props) {
   const { phone, name } = route.params;
   const [otp, setOtp] = useState("");
   const signupVerifyOtp = useAppStore((s) => s.signupVerifyOtp);
+  const signupInitiate = useAppStore((s) => s.signupInitiate);
   const isLoading = useAppStore((s) => s.isLoading);
-  const error = useAppStore((s) => s.error);
   const clearError = useAppStore((s) => s.clearError);
 
   const handleVerifyOtp = async () => {
@@ -30,8 +31,18 @@ export function OtpVerifyScreen({ navigation, route }: Props) {
     try {
       const signupToken = await signupVerifyOtp(phone, otp);
       navigation.navigate("SignupPhonePassword", { phone, name, signupToken });
-    } catch (err) {
-      Alert.alert("Error", error || "Failed to verify OTP");
+    } catch (caughtError) {
+      Alert.alert("Error", getErrorMessage(caughtError, "Failed to verify OTP"));
+      clearError();
+    }
+  };
+
+  const handleResendOtp = async () => {
+    try {
+      await signupInitiate(phone);
+      Alert.alert("Success", "OTP resent successfully");
+    } catch (caughtError) {
+      Alert.alert("Error", getErrorMessage(caughtError, "Failed to resend OTP"));
       clearError();
     }
   };
@@ -59,7 +70,7 @@ export function OtpVerifyScreen({ navigation, route }: Props) {
               onPress={handleVerifyOtp}
               disabled={isLoading}
             />
-            <Pressable onPress={handleVerifyOtp} disabled={isLoading}>
+            <Pressable onPress={handleResendOtp} disabled={isLoading}>
               <Text style={styles.link}>Resend OTP</Text>
             </Pressable>
           </View>

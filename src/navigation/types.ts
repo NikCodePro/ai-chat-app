@@ -27,4 +27,5 @@ export type MainStackParamList = {
   Home: undefined;
   Chat: undefined;
   VoiceCall: undefined;
+  Profile: undefined;
 };

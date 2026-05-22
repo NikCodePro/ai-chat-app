@@ -4,6 +4,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { GradientCard } from "../../components/GradientCard";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { MainStackParamList } from "../../navigation/types";
+import { getErrorMessage } from "../../services/api";
 import { useAppStore } from "../../store/appStore";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
@@ -14,7 +15,6 @@ type Props = NativeStackScreenProps<MainStackParamList, "Home">;
 export function HomeScreen({ navigation }: Props) {
   const logout = useAppStore((s) => s.logout);
   const isLoading = useAppStore((s) => s.isLoading);
-  const error = useAppStore((s) => s.error);
   const clearError = useAppStore((s) => s.clearError);
 
   const handleLogout = async () => {
@@ -26,8 +26,8 @@ export function HomeScreen({ navigation }: Props) {
         onPress: async () => {
           try {
             await logout();
-          } catch (err) {
-            Alert.alert("Error", error || "Failed to logout");
+          } catch (caughtError) {
+            Alert.alert("Error", getErrorMessage(caughtError, "Failed to logout"));
             clearError();
           }
         },
@@ -45,13 +45,23 @@ export function HomeScreen({ navigation }: Props) {
               Switch between text intelligence and voice assistant flow
             </Text>
           </View>
-          <Pressable
-            style={[styles.logoutBtn, isLoading && styles.disabled]}
-            onPress={handleLogout}
-            disabled={isLoading}
-          >
-            <Ionicons name="log-out-outline" size={24} color={colors.primary} />
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityLabel="View profile"
+              style={styles.headerActionBtn}
+              onPress={() => navigation.navigate("Profile")}
+            >
+              <Ionicons name="person-circle-outline" size={24} color={colors.primary} />
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Logout"
+              style={[styles.headerActionBtn, isLoading && styles.disabled]}
+              onPress={handleLogout}
+              disabled={isLoading}
+            >
+              <Ionicons name="log-out-outline" size={24} color={colors.primary} />
+            </Pressable>
+          </View>
         </View>
 
         <Pressable
@@ -105,7 +115,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.sm,
   },
   header: {
     flexDirection: "row",
@@ -125,7 +135,12 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: typography.body,
   },
-  logoutBtn: {
+  headerActions: {
+    flexDirection: "row",
+    gap: spacing.xs,
+    marginLeft: spacing.sm,
+  },
+  headerActionBtn: {
     width: 44,
     height: 44,
     borderRadius: 12,

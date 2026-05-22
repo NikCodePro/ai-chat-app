@@ -6,6 +6,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { GradientCard } from "../../components/GradientCard";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { AuthStackParamList } from "../../navigation/types";
+import { getErrorMessage } from "../../services/api";
 import { useAppStore } from "../../store/appStore";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
@@ -20,7 +21,7 @@ export function SignupScreen({ navigation }: Props) {
   const isLoading = useAppStore((s) => s.isLoading);
 
   // Google OAuth configuration
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
+  const [request, , promptAsync] = AuthSession.useAuthRequest(
     {
       clientId: "985688017742-ko0ptvnip8ms5ti8aakjf37hdqk1bgt4.apps.googleusercontent.com", // Replace with your actual Google Client ID
       scopes: ["openid", "profile", "email"],
@@ -39,8 +40,11 @@ export function SignupScreen({ navigation }: Props) {
       } else if (result.type === "error") {
         Alert.alert("Error", "Google sign-in was cancelled or failed");
       }
-    } catch (err) {
-      Alert.alert("Error", "Google sign-in failed");
+    } catch (caughtError) {
+      Alert.alert(
+        "Google sign-in failed",
+        getErrorMessage(caughtError, "Google sign-in failed"),
+      );
     }
   };
   return (

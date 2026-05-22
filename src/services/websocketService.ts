@@ -136,4 +136,5 @@ export class VoiceWebSocketService {
 
 // Ensure you point this to your actual backend IP
 const BACKEND_WS_URL = "ws://192.168.1.9:8000/api/v1/ws/voice";
+// const BACKEND_WS_URL = "wss://api.sankatseva.com/api/v1/ws/voice";
 export const voiceWsService = new VoiceWebSocketService(BACKEND_WS_URL);

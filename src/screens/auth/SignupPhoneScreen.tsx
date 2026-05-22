@@ -6,6 +6,7 @@ import { CustomInput } from "../../components/CustomInput";
 import { GradientCard } from "../../components/GradientCard";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { AuthStackParamList } from "../../navigation/types";
+import { getErrorMessage } from "../../services/api";
 import { useAppStore } from "../../store/appStore";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
@@ -18,7 +19,6 @@ export function SignupPhoneScreen({ navigation }: Props) {
   const [phone, setPhone] = useState("");
   const signupInitiate = useAppStore((s) => s.signupInitiate);
   const isLoading = useAppStore((s) => s.isLoading);
-  const error = useAppStore((s) => s.error);
   const clearError = useAppStore((s) => s.clearError);
 
   const handleSendOtp = async () => {
@@ -34,8 +34,8 @@ export function SignupPhoneScreen({ navigation }: Props) {
     try {
       await signupInitiate(phone);
       navigation.navigate("OtpVerify", { phone, name });
-    } catch (err) {
-      Alert.alert("Error", error || "Failed to send OTP");
+    } catch (caughtError) {
+      Alert.alert("Error", getErrorMessage(caughtError, "Failed to send OTP"));
       clearError();
     }
   };

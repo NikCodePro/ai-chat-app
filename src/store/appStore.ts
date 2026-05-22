@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { ApiError, authApi, User } from "../services/api";
+import { authApi, getErrorMessage, User } from "../services/api";
 import { Chat, chatApi, ChatWebSocket, LLMProvider } from "../services/chatApi";
 import { tokenStorage } from "../services/tokenStorage";
 
@@ -33,6 +33,8 @@ type AppState = {
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   clearError: () => void;
+  updateProfile: (name?: string, username?: string) => Promise<void>;
+  changePassword: (newPassword: string) => Promise<void>;
 
   // Chat state
   activeCallSeconds: number;
@@ -53,6 +55,7 @@ type AppState = {
   setCurrentChat: (chat: Chat) => Promise<void>;
   createNewChat: (title: string, model: LLMProvider) => Promise<void>;
   loadChatHistory: (chatId: string) => Promise<void>;
+  deleteChat: (chatId: string) => Promise<void>;
   connectWebSocket: () => Promise<void>;
   disconnectWebSocket: () => void;
   sendChatMessage: (message: string, provider: LLMProvider) => void;
@@ -74,8 +77,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await authApi.initiateSignup(identifier);
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Signup initiation failed";
+      const message = getErrorMessage(err, "Signup initiation failed");
       set({ error: message });
       throw err;
     } finally {
@@ -89,8 +91,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const data = await authApi.verifySignupOtp(identifier, code);
       return data.signup_token;
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "OTP verification failed";
+      const message = getErrorMessage(err, "OTP verification failed");
       set({ error: message });
       throw err;
     } finally {
@@ -126,8 +127,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         refreshToken: data.refresh_token,
       });
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Signup completion failed";
+      const message = getErrorMessage(err, "Signup completion failed");
       set({ error: message });
       throw err;
     } finally {
@@ -160,7 +160,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       return false;
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Login failed";
+      const message = getErrorMessage(err, "Login failed");
       set({ error: message });
       throw err;
     } finally {
@@ -190,8 +190,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         refreshToken: data.refresh_token,
       });
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "2FA verification failed";
+      const message = getErrorMessage(err, "2FA verification failed");
       set({ error: message });
       throw err;
     } finally {
@@ -219,8 +218,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         refreshToken: data.refresh_token,
       });
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Google authentication failed";
+      const message = getErrorMessage(err, "Google authentication failed");
       set({ error: message });
       throw err;
     } finally {
@@ -247,7 +245,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         messages: [],
       });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Logout failed";
+      const message = getErrorMessage(err, "Logout failed");
       set({ error: message });
       throw err;
     } finally {
@@ -275,6 +273,41 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  updateProfile: async (name?: string, username?: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const token = get().accessToken;
+      if (!token) throw new Error("Not authenticated");
+      const updatedUser = await authApi.updateProfile(token, name, username);
+      const tokens = await tokenStorage.getTokens();
+      if (tokens) {
+        await tokenStorage.setTokens(tokens.accessToken, tokens.refreshToken, updatedUser);
+      }
+      set({ user: updatedUser });
+    } catch (err) {
+      const message = getErrorMessage(err, "Profile update failed");
+      set({ error: message });
+      throw err;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  changePassword: async (newPassword: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const token = get().accessToken;
+      if (!token) throw new Error("Not authenticated");
+      await authApi.changePassword(token, newPassword);
+    } catch (err) {
+      const message = getErrorMessage(err, "Password change failed");
+      set({ error: message });
+      throw err;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 
   // Chat state
   activeCallSeconds: 0,
@@ -373,7 +406,36 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  deleteChat: async (chatId: string) => {
+    set({ isChatLoading: true, chatError: null });
+    try {
+      const token = get().accessToken;
+      if (!token) throw new Error("No access token");
+      await chatApi.deleteChat(token, chatId);
+      
+      set((s) => {
+        const remainingChats = s.chats.filter(c => c.id !== chatId);
+        const isCurrentDeleted = s.currentChat?.id === chatId;
+        
+        return {
+          chats: remainingChats,
+          currentChat: isCurrentDeleted ? null : s.currentChat,
+          messages: isCurrentDeleted ? [] : s.messages
+        };
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to delete chat";
+      set({ chatError: message });
+      throw err;
+    } finally {
+      set({ isChatLoading: false });
+    }
+  },
+
   connectWebSocket: async () => {
+    // Clean up any existing connection first
+    get().disconnectWebSocket();
     try {
       const token = get().accessToken;
       if (!token) throw new Error("No access token");
@@ -400,6 +462,17 @@ export const useAppStore = create<AppState>((set, get) => ({
               };
             }
             return s;
+          });
+        } else if (msg.type === "title_update" && msg.title) {
+          // Update chat title
+          set((s) => {
+            const updatedChats = s.chats.map((c) => 
+              c.id === msg.chat_id ? { ...c, title: msg.title as string } : c
+            );
+            return {
+              chats: updatedChats,
+              currentChat: s.currentChat?.id === msg.chat_id ? { ...s.currentChat, title: msg.title as string } : s.currentChat
+            };
           });
         } else if (msg.type === "end") {
           // Chat ended

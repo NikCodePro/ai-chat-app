@@ -11,21 +11,28 @@ import { colors } from '../theme/colors';
 
 type ScreenWrapperProps = {
   children: ReactNode;
+  avoidKeyboard?: boolean;
 };
 
-export function ScreenWrapper({ children }: ScreenWrapperProps) {
+export function ScreenWrapper({ children, avoidKeyboard = true }: ScreenWrapperProps) {
+  const content = <View style={styles.content}>{children}</View>;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <LinearGradient colors={['#080A10', '#0D1320', '#111A2F']} style={styles.gradient}>
         <View style={styles.glowTop} />
         <View style={styles.glowBottom} />
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoid}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 40}
-        >
-          <View style={styles.content}>{children}</View>
-        </KeyboardAvoidingView>
+        {avoidKeyboard ? (
+          <KeyboardAvoidingView
+            style={styles.keyboardAvoid}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 40}
+          >
+            {content}
+          </KeyboardAvoidingView>
+        ) : (
+          content
+        )}
       </LinearGradient>
     </SafeAreaView>
   );

@@ -13,6 +13,7 @@ import { SplashScreen } from "../screens/auth/SplashScreen";
 import { ChatScreen } from "../screens/chat/ChatScreen";
 import { VoiceCallScreen } from "../screens/chat/VoiceCallScreen";
 import { HomeScreen } from "../screens/home/HomeScreen";
+import { ProfileScreen } from "../screens/profile/ProfileScreen";
 import { useAppStore } from "../store/appStore";
 import { colors } from "../theme/colors";
 import { AuthStackParamList, MainStackParamList } from "./types";
@@ -48,18 +49,17 @@ function MainNavigator() {
   return (
     <MainStack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: colors.background },
-        headerTintColor: colors.text,
-        headerShadowVisible: false,
+        headerShown: false,
         contentStyle: { backgroundColor: colors.background },
       }}
     >
       <MainStack.Screen name="Home" component={HomeScreen} />
       <MainStack.Screen name="Chat" component={ChatScreen} />
+      <MainStack.Screen name="Profile" component={ProfileScreen} />
       <MainStack.Screen 
         name="VoiceCall" 
         component={VoiceCallScreen} 
-        options={{ presentation: 'fullScreenModal', headerShown: false }} 
+        options={{ presentation: 'fullScreenModal' }} 
       />
     </MainStack.Navigator>
   );

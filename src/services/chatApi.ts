@@ -1,5 +1,7 @@
 import { ApiError } from "./api";
 
+// export const CHAT_API_BASE_URL = "https://api.sankatseva.com/api/v1";
+// export const CHAT_WS_URL = "wss://api.sankatseva.com/api/v1/ws/chat";
 export const CHAT_API_BASE_URL = "http://192.168.1.9:8000/api/v1";
 export const CHAT_WS_URL = "ws://192.168.1.9:8000/api/v1/ws/chat";
 
@@ -22,8 +24,9 @@ export interface Chat {
 }
 
 export interface WebSocketMessage {
-  type: "start" | "chunk" | "end";
+  type: "start" | "chunk" | "end" | "title_update";
   content?: string;
+  title?: string;
   chat_id: string;
 }
 
@@ -104,6 +107,54 @@ export const chatApi = {
 
     const data = await response.json();
     return data.data || [];
+  },
+
+  deleteChat: async (
+    accessToken: string,
+    chatId: string,
+  ): Promise<void> => {
+    const response = await fetch(`${CHAT_API_BASE_URL}/chats/${chatId}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new ApiError(
+        response.status,
+        data.message || "Failed to delete chat",
+        data.data,
+      );
+    }
+  },
+
+  transcribeAudio: async (
+    accessToken: string,
+    base64Audio: string,
+  ): Promise<string> => {
+    const response = await fetch(`${CHAT_API_BASE_URL}/chats/transcribe`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ audio: base64Audio }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new ApiError(
+        response.status,
+        data.message || "Failed to transcribe audio",
+        data.data,
+      );
+    }
+
+    const data = await response.json();
+    return data.data.text;
   },
 };
 

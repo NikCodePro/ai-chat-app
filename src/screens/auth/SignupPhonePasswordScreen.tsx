@@ -4,8 +4,11 @@ import { Alert, StyleSheet, Text, View } from "react-native";
 import { CustomButton } from "../../components/CustomButton";
 import { CustomInput } from "../../components/CustomInput";
 import { GradientCard } from "../../components/GradientCard";
+import { PasswordInput } from "../../components/PasswordInput";
+import { PasswordRequirements } from "../../components/PasswordRequirements";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { AuthStackParamList } from "../../navigation/types";
+import { getErrorMessage } from "../../services/api";
 import { useAppStore } from "../../store/appStore";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
@@ -18,9 +21,10 @@ export function SignupPhonePasswordScreen({ navigation, route }: Props) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const signupComplete = useAppStore((s) => s.signupComplete);
   const isLoading = useAppStore((s) => s.isLoading);
-  const error = useAppStore((s) => s.error);
   const clearError = useAppStore((s) => s.clearError);
 
   const handleCreateAccount = async () => {
@@ -36,8 +40,8 @@ export function SignupPhonePasswordScreen({ navigation, route }: Props) {
       Alert.alert("Error", "Passwords do not match");
       return;
     }
-    if (password.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters");
+    if (password.length < 8) {
+      Alert.alert("Error", "Password must be at least 8 characters");
       return;
     }
 
@@ -49,8 +53,11 @@ export function SignupPhonePasswordScreen({ navigation, route }: Props) {
     try {
       await signupComplete(signupToken, name, username, password);
       // Navigation happens automatically when isAuthenticated changes
-    } catch (err) {
-      Alert.alert("Error", error || "Failed to create account");
+    } catch (caughtError) {
+      Alert.alert(
+        "Error",
+        getErrorMessage(caughtError, "Failed to create account"),
+      );
       clearError();
     }
   };
@@ -72,20 +79,23 @@ export function SignupPhonePasswordScreen({ navigation, route }: Props) {
               autoCapitalize="none"
               editable={!isLoading}
             />
-            <CustomInput
+            <PasswordInput
               label="Password"
               value={password}
               onChangeText={setPassword}
               placeholder="Create password"
-              secureTextEntry
+              isVisible={isPasswordVisible}
+              onToggleVisibility={() => setIsPasswordVisible((v) => !v)}
               editable={!isLoading}
             />
-            <CustomInput
+            <PasswordRequirements password={password} />
+            <PasswordInput
               label="Confirm Password"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               placeholder="Repeat password"
-              secureTextEntry
+              isVisible={isConfirmPasswordVisible}
+              onToggleVisibility={() => setIsConfirmPasswordVisible((v) => !v)}
               editable={!isLoading}
             />
             <CustomButton
