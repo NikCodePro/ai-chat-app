@@ -177,6 +177,10 @@ export function ChatScreen({ navigation }: Props) {
         console.log("App returned to foreground. Reconnecting WebSocket...");
         try {
           await connectWebSocket();
+          const current = useAppStore.getState().currentChat;
+          if (current) {
+            await useAppStore.getState().loadChatHistory(current.id);
+          }
         } catch (err) {
           console.error("Failed to reconnect WebSocket on foreground:", err);
         }
@@ -522,8 +526,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: spacing.xl,
-    // When inverted, FlatList Empty component is rendered at the top, so we reverse it
-    transform: [{ scaleY: -1 }],
   },
   emptyStateText: {
     color: colors.muted,

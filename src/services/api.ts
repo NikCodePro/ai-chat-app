@@ -20,6 +20,18 @@ export interface SignupVerifyResponse {
   identifier: string;
 }
 
+export interface ForgotPasswordInitiateResponse {
+  message: string;
+  identifier: string;
+  expires_at: string;
+}
+
+export interface ForgotPasswordVerifyResponse {
+  message: string;
+  reset_token: string;
+  identifier: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -41,7 +53,6 @@ export interface AuthTokens {
 
 export type LoginResponse = AuthTokens;
 export type SignupCompleteResponse = AuthTokens;
-
 // Error handling
 export class ApiError extends Error {
   constructor(
@@ -231,6 +242,49 @@ export const authApi = {
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
     await handleResponse<void>(response);
+  },
+
+  initiateForgotPassword: async (
+    identifier: string,
+  ): Promise<ForgotPasswordInitiateResponse> => {
+    const response = await fetch(`${API_BASE_URL}/auth/forgot-password/initiate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier }),
+    });
+    const data = await handleResponse<ForgotPasswordInitiateResponse>(response);
+    return data.data;
+  },
+
+  verifyForgotPasswordOtp: async (
+    identifier: string,
+    code: string,
+  ): Promise<ForgotPasswordVerifyResponse> => {
+    const response = await fetch(`${API_BASE_URL}/auth/forgot-password/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, code }),
+    });
+    const data = await handleResponse<ForgotPasswordVerifyResponse>(response);
+    return data.data;
+  },
+
+  resetPassword: async (
+    identifier: string,
+    resetToken: string,
+    newPassword: string,
+  ): Promise<{ message: string }> => {
+    const response = await fetch(`${API_BASE_URL}/auth/forgot-password/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        identifier,
+        reset_token: resetToken,
+        new_password: newPassword,
+      }),
+    });
+    const data = await handleResponse<{ message: string }>(response);
+    return data.data;
   },
 
   getCurrentUser: async (accessToken: string): Promise<User> => {

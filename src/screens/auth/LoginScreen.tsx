@@ -160,6 +160,18 @@ export function LoginScreen({ navigation }: Props) {
                 setIsPasswordVisible((visible) => !visible)
               }
             />
+            <Pressable
+              onPress={() => {
+                clearError();
+                navigation.navigate("ForgotPassword");
+              }}
+              disabled={isLoading}
+              style={{ alignSelf: "flex-end" }}
+            >
+              <Text style={styles.forgotPasswordLink}>
+                Forgot Password?
+              </Text>
+            </Pressable>
 
             <CustomButton
               title={isLoading ? "Signing in..." : "Sign in"}
@@ -321,6 +333,11 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: typography.caption,
     fontWeight: typography.weights.semibold,
+  },
+  forgotPasswordLink: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: typography.weights.medium,
   },
   googleBtn: {
     minHeight: 50,

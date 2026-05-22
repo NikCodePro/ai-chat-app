@@ -21,6 +21,14 @@ export type AuthStackParamList = {
     name: string;
     signupToken?: string;
   };
+  ForgotPassword: undefined;
+  ForgotPasswordOtp: {
+    identifier: string;
+  };
+  ResetPassword: {
+    identifier: string;
+    resetToken: string;
+  };
 };
 
 export type MainStackParamList = {

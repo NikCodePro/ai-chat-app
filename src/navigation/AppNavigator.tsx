@@ -10,6 +10,9 @@ import { SignupPhonePasswordScreen } from "../screens/auth/SignupPhonePasswordSc
 import { SignupPhoneScreen } from "../screens/auth/SignupPhoneScreen";
 import { SignupScreen } from "../screens/auth/SignupScreen";
 import { SplashScreen } from "../screens/auth/SplashScreen";
+import { ForgotPasswordScreen } from "../screens/auth/ForgotPasswordScreen";
+import { ForgotPasswordOtpScreen } from "../screens/auth/ForgotPasswordOtpScreen";
+import { ResetPasswordScreen } from "../screens/auth/ResetPasswordScreen";
 import { ChatScreen } from "../screens/chat/ChatScreen";
 import { VoiceCallScreen } from "../screens/chat/VoiceCallScreen";
 import { HomeScreen } from "../screens/home/HomeScreen";
@@ -40,6 +43,18 @@ function AuthNavigator() {
       <AuthStack.Screen
         name="SignupPhonePassword"
         component={SignupPhonePasswordScreen}
+      />
+      <AuthStack.Screen
+        name="ForgotPassword"
+        component={ForgotPasswordScreen}
+      />
+      <AuthStack.Screen
+        name="ForgotPasswordOtp"
+        component={ForgotPasswordOtpScreen}
+      />
+      <AuthStack.Screen
+        name="ResetPassword"
+        component={ResetPasswordScreen}
       />
     </AuthStack.Navigator>
   );

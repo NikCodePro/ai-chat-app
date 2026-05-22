@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { AppState as RNAppState } from "react-native";
+import * as Notifications from "expo-notifications";
 import { authApi, getErrorMessage, User } from "../services/api";
 import { Chat, chatApi, ChatWebSocket, LLMProvider } from "../services/chatApi";
 import { tokenStorage } from "../services/tokenStorage";
@@ -311,10 +313,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Chat state
   activeCallSeconds: 0,
-  messages: [
-    { id: "a1", role: "assistant", text: "Hey! I am ready when you are." },
-    { id: "u1", role: "user", text: "Give me a clear summary of today." },
-  ],
+  messages: [],
   tickCall: () => set((s) => ({ activeCallSeconds: s.activeCallSeconds + 1 })),
   resetCall: () => set({ activeCallSeconds: 0 }),
   pushMessage: (message) =>
@@ -339,6 +338,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (chats.length > 0) {
         const mostRecent = chats[0];
         await get().setCurrentChat(mostRecent);
+      } else {
+        await get().createNewChat("New Chat", "mistral");
       }
     } catch (err) {
       const message =
@@ -477,6 +478,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         } else if (msg.type === "end") {
           // Chat ended
           console.log("Chat ended:", msg.chat_id);
+          
+          if (RNAppState.currentState !== "active") {
+            Notifications.scheduleNotificationAsync({
+              content: {
+                title: "Response Generated",
+                body: "Your AI assistant has finished replying.",
+              },
+              trigger: null,
+            });
+          }
         }
       });
 

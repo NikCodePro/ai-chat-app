@@ -24,9 +24,6 @@ export function ChatHeader({
           <Text style={styles.chatTitle} numberOfLines={1}>
             {currentChat ? currentChat.title : "Chats"}
           </Text>
-          {currentChat && (
-            <Text style={styles.modelBadge}>{currentChat.model}</Text>
-          )}
         </View>
       </View>
     </View>

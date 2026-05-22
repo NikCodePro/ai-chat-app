@@ -34,7 +34,8 @@
         {
           "microphonePermission": "Allow Sankat Seva to access your microphone for voice calls."
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "reactCompiler": true
