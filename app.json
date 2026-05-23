@@ -5,7 +5,11 @@
     "icon": "./assets/icon.png",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "sankatseva",
+    "scheme": [
+      "sankatseva",
+      "com.sankatseva",
+      "com.googleusercontent.apps.985688017742-s8llh51e8657vstrg8amkpgtrb05qua5"
+    ],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {

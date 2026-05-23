@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { GradientCard } from "../../components/GradientCard";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { AuthStackParamList } from "../../navigation/types";
@@ -20,26 +21,58 @@ export function SignupScreen({ navigation }: Props) {
   const googleAuth = useAppStore((s) => s.googleAuth);
   const isLoading = useAppStore((s) => s.isLoading);
 
+  const [nonce] = useState(() => Math.random().toString(36).substring(2, 15));
+
+  // Google OAuth client IDs
+  const webClientId = "985688017742-ko0ptvnip8ms5ti8aakjf37hdqk1bgt4.apps.googleusercontent.com";
+  const iosClientId = "985688017742-s8llh51e8657vstrg8amkpgtrb05qua5.apps.googleusercontent.com"; 
+  const androidClientId = "985688017742-9523bmh33nck51091cgilpmbmu44vied.apps.googleusercontent.com";
+
   // Google OAuth configuration
-  const [request, , promptAsync] = AuthSession.useAuthRequest(
+  const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
-      clientId: "985688017742-ko0ptvnip8ms5ti8aakjf37hdqk1bgt4.apps.googleusercontent.com", // Replace with your actual Google Client ID
+      clientId: Platform.select({
+        ios: iosClientId,
+        android: androidClientId,
+        default: webClientId,
+      }),
       scopes: ["openid", "profile", "email"],
-      responseType: AuthSession.ResponseType.Token,
-      redirectUri: AuthSession.makeRedirectUri(),
+      responseType: AuthSession.ResponseType.IdToken,
+      redirectUri: AuthSession.makeRedirectUri({
+        scheme: Platform.select({
+          ios: `com.googleusercontent.apps.985688017742-s8llh51e8657vstrg8amkpgtrb05qua5`,
+          android: `com.sankatseva`,
+          default: `sankatseva`,
+        }),
+        path: "oauth2redirect",
+      }),
+      usePKCE: false,
+      extraParams: {
+        nonce,
+      },
     },
     { authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth" },
   );
 
+  useEffect(() => {
+    if (response?.type === "success") {
+      const idToken = response.authentication?.idToken || response.params?.id_token;
+      if (idToken) {
+        googleAuth(idToken).catch((err) => {
+          Alert.alert(
+            "Google sign-in failed",
+            getErrorMessage(err, "Google sign-in failed"),
+          );
+        });
+      }
+    } else if (response?.type === "error") {
+      Alert.alert("Error", "Google sign-in was cancelled or failed");
+    }
+  }, [response, googleAuth]);
+
   const handleGoogleSignIn = async () => {
     try {
-      const result = await promptAsync();
-      if (result.type === "success" && result.params.id_token) {
-        await googleAuth(result.params.id_token);
-        // Navigation happens automatically on successful auth
-      } else if (result.type === "error") {
-        Alert.alert("Error", "Google sign-in was cancelled or failed");
-      }
+      await promptAsync();
     } catch (caughtError) {
       Alert.alert(
         "Google sign-in failed",
