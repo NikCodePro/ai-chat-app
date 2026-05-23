@@ -30,6 +30,11 @@ type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const discovery = {
+  authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+  tokenEndpoint: "https://oauth2.googleapis.com/token",
+};
+
 function validateIdentifier(value: string) {
   const identifier = value.trim();
 
@@ -62,11 +67,9 @@ export function LoginScreen({ navigation }: Props) {
   const isLoading = useAppStore((s) => s.isLoading);
   const clearError = useAppStore((s) => s.clearError);
 
-  const [nonce] = useState(() => Math.random().toString(36).substring(2, 15));
-
   // Google OAuth client IDs
   const webClientId = "985688017742-ko0ptvnip8ms5ti8aakjf37hdqk1bgt4.apps.googleusercontent.com";
-  const iosClientId = "985688017742-s8llh51e8657vstrg8amkpgtrb05qua5.apps.googleusercontent.com"; 
+  const iosClientId = "985688017742-s8llh51e8657vstrg8amkpgtrb05qua5.apps.googleusercontent.com";
   const androidClientId = "985688017742-9523bmh33nck51091cgilpmbmu44vied.apps.googleusercontent.com";
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
@@ -77,35 +80,63 @@ export function LoginScreen({ navigation }: Props) {
         default: webClientId,
       }),
       scopes: ["openid", "profile", "email"],
-      responseType: AuthSession.ResponseType.IdToken,
+      usePKCE: true,
       redirectUri: Platform.select({
         ios: `com.googleusercontent.apps.985688017742-s8llh51e8657vstrg8amkpgtrb05qua5:/oauth2redirect`,
         android: `com.sankatseva:/oauth2redirect`,
         default: AuthSession.makeRedirectUri(),
       }),
-      usePKCE: false,
-      extraParams: {
-        nonce,
-      },
     },
-    { authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth" },
+    discovery
   );
 
   useEffect(() => {
     if (response?.type === "success") {
-      const idToken = response.authentication?.idToken || response.params?.id_token;
-      if (idToken) {
-        googleAuth(idToken).catch((err) => {
-          Alert.alert(
-            "Google sign-in failed",
-            getErrorMessage(err, "Google sign-in failed"),
-          );
-        });
+      const code = response.params?.code;
+      if (code && request?.codeVerifier) {
+        AuthSession.exchangeCodeAsync(
+          {
+            clientId: Platform.select({
+              ios: iosClientId,
+              android: androidClientId,
+              default: webClientId,
+            }),
+            code,
+            redirectUri: Platform.select({
+              ios: `com.googleusercontent.apps.985688017742-s8llh51e8657vstrg8amkpgtrb05qua5:/oauth2redirect`,
+              android: `com.sankatseva:/oauth2redirect`,
+              default: AuthSession.makeRedirectUri(),
+            }),
+            extraParams: {
+              code_verifier: request.codeVerifier,
+            },
+          },
+          discovery
+        )
+          .then((tokenResult) => {
+            const idToken = tokenResult.idToken;
+            if (idToken) {
+              googleAuth(idToken).catch((err) => {
+                Alert.alert(
+                  "Google sign-in failed",
+                  getErrorMessage(err, "Google sign-in failed"),
+                );
+              });
+            } else {
+              Alert.alert("Google sign-in failed", "No ID token returned");
+            }
+          })
+          .catch((err) => {
+            Alert.alert(
+              "Google sign-in failed",
+              getErrorMessage(err, "Failed to exchange authorization code"),
+            );
+          });
       }
     } else if (response?.type === "error") {
       Alert.alert("Error", "Google sign-in was cancelled or failed");
     }
-  }, [response, googleAuth]);
+  }, [response, request, googleAuth]);
 
   const handleGoogleSignIn = async () => {
     try {
