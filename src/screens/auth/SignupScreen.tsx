@@ -38,13 +38,10 @@ export function SignupScreen({ navigation }: Props) {
       }),
       scopes: ["openid", "profile", "email"],
       responseType: AuthSession.ResponseType.IdToken,
-      redirectUri: AuthSession.makeRedirectUri({
-        scheme: Platform.select({
-          ios: `com.googleusercontent.apps.985688017742-s8llh51e8657vstrg8amkpgtrb05qua5`,
-          android: `com.sankatseva`,
-          default: `sankatseva`,
-        }),
-        path: "oauth2redirect",
+      redirectUri: Platform.select({
+        ios: `com.googleusercontent.apps.985688017742-s8llh51e8657vstrg8amkpgtrb05qua5:/oauth2redirect`,
+        android: `com.sankatseva:/oauth2redirect`,
+        default: AuthSession.makeRedirectUri(),
       }),
       usePKCE: false,
       extraParams: {
