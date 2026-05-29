@@ -15,6 +15,7 @@ import { ForgotPasswordOtpScreen } from "../screens/auth/ForgotPasswordOtpScreen
 import { ResetPasswordScreen } from "../screens/auth/ResetPasswordScreen";
 import { ChatScreen } from "../screens/chat/ChatScreen";
 import { VoiceCallScreen } from "../screens/chat/VoiceCallScreen";
+import { VideoCallScreen } from "../screens/chat/VideoCallScreen";
 import { HomeScreen } from "../screens/home/HomeScreen";
 import { ProfileScreen } from "../screens/profile/ProfileScreen";
 import { useAppStore } from "../store/appStore";
@@ -74,6 +75,11 @@ function MainNavigator() {
       <MainStack.Screen 
         name="VoiceCall" 
         component={VoiceCallScreen} 
+        options={{ presentation: 'fullScreenModal' }} 
+      />
+      <MainStack.Screen 
+        name="VideoCall" 
+        component={VideoCallScreen} 
         options={{ presentation: 'fullScreenModal' }} 
       />
     </MainStack.Navigator>

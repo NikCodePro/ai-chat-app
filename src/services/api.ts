@@ -1,6 +1,6 @@
 // API Base Configuration
-export const API_BASE_URL = "https://api.sankatseva.com/api/v1";
-// export const API_BASE_URL = "http://192.168.1.9:8000/api/v1";
+// export const API_BASE_URL = "https://api.sankatseva.com/api/v1";
+export const API_BASE_URL = "http://192.168.3.15:8000/api/v1";
 
 export type ApiResponse<T> = {
   success: boolean;
@@ -127,12 +127,12 @@ async function handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
   const rawText = await response.text();
   const data = rawText
     ? (() => {
-        try {
-          return JSON.parse(rawText);
-        } catch {
-          return { message: rawText };
-        }
-      })()
+      try {
+        return JSON.parse(rawText);
+      } catch {
+        return { message: rawText };
+      }
+    })()
     : {};
 
   if (!response.ok) {

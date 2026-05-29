@@ -106,6 +106,27 @@ export function HomeScreen({ navigation }: Props) {
           </GradientCard>
         </Pressable>
 
+        <Pressable
+          style={styles.cardWrap}
+          onPress={() => navigation.navigate("VideoCall")}
+        >
+          <GradientCard>
+            <View style={styles.cardRow}>
+              <Ionicons
+                name="videocam-outline"
+                size={26}
+                color="#FF6B81"
+              />
+              <View style={styles.cardText}>
+                <Text style={styles.cardTitle}>AI Video Call</Text>
+                <Text style={styles.cardDesc}>
+                  Face-to-face real-time interactive AI video avatar
+                </Text>
+              </View>
+            </View>
+          </GradientCard>
+        </Pressable>
+
       </View>
     </ScreenWrapper>
   );

@@ -33,15 +33,15 @@ export class VoiceWebSocketService {
         try {
           const data = JSON.parse(event.data);
           if (data.type === "server_audio") {
-             const recvTs = Date.now();
-             const serverTs = data.server_timestamp;
-             const latency = recvTs - serverTs;
-             useDebugStore.getState().setNetworkLatency(latency);
-             console.log(`[DEBUG-FRONTEND-RX] ai_audio_chunk ${data.chunk_id} | backend_ts: ${serverTs} | recv_ts: ${recvTs} | network_latency: ${latency}ms | size: ${data.audio.length} bytes`);
-             debugService.onWsReceive(data.chunk_id, data.timestamp, data.audio.length, data.server_timestamp);
-             this.emit("binary_audio", { audio: data.audio, chunk_id: data.chunk_id });
+            const recvTs = Date.now();
+            const serverTs = data.server_timestamp;
+            const latency = recvTs - serverTs;
+            useDebugStore.getState().setNetworkLatency(latency);
+            console.log(`[DEBUG-FRONTEND-RX] ai_audio_chunk ${data.chunk_id} | backend_ts: ${serverTs} | recv_ts: ${recvTs} | network_latency: ${latency}ms | size: ${data.audio.length} bytes`);
+            debugService.onWsReceive(data.chunk_id, data.timestamp, data.audio.length, data.server_timestamp);
+            this.emit("binary_audio", { audio: data.audio, chunk_id: data.chunk_id });
           } else {
-             this.emit(data.type, data);
+            this.emit(data.type, data);
           }
         } catch (err) {
           console.error("Failed to parse websocket message", err);
@@ -86,7 +86,7 @@ export class VoiceWebSocketService {
       const timestamp = Date.now();
       debugService.onMicrophoneChunk();
       debugService.onWsSend(chunkId, timestamp, base64Data.length);
-      
+
       const payload = {
         type: "client_audio",
         audio: base64Data,
@@ -135,6 +135,6 @@ export class VoiceWebSocketService {
 }
 
 // Ensure you point this to your actual backend IP
-// const BACKEND_WS_URL = "ws://192.168.1.9:8000/api/v1/ws/voice";
-const BACKEND_WS_URL = "wss://api.sankatseva.com/api/v1/ws/voice";
+const BACKEND_WS_URL = "ws://192.168.3.15:8000/api/v1/ws/voice";
+// const BACKEND_WS_URL = "wss://api.sankatseva.com/api/v1/ws/voice";
 export const voiceWsService = new VoiceWebSocketService(BACKEND_WS_URL);

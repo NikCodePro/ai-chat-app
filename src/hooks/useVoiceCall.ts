@@ -37,7 +37,12 @@ function calculateRMS(base64Data: string): number {
   }
 }
 
-export function useVoiceCall() {
+export type UseVoiceCallOptions = {
+  isVideoCall?: boolean;
+  onTranscript?: (text: string) => void;
+};
+
+export function useVoiceCall(options?: UseVoiceCallOptions) {
   const [status, setStatusState] = useState<CallStatus>("Disconnected");
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
@@ -159,8 +164,16 @@ export function useVoiceCall() {
     };
 
     const handleBinaryAudio = (payload: { audio: string; chunk_id?: number }) => {
-      if (payload.audio) {
+      // If we are in a video call, HeyGen handles the audio generation from text, 
+      // so we drop Gemini's raw audio to avoid playing both.
+      if (!options?.isVideoCall && payload.audio) {
         audioService.queueAudioChunk(payload.audio, payload.chunk_id);
+      }
+    };
+
+    const handleAiTranscript = (payload: { text: string }) => {
+      if (options?.onTranscript) {
+        options.onTranscript(payload.text);
       }
     };
 
@@ -195,6 +208,7 @@ export function useVoiceCall() {
     voiceWsService.on("connection_established", handleConnectionEstablished);
     voiceWsService.on("disconnected", handleDisconnected);
     voiceWsService.on("binary_audio", handleBinaryAudio);
+    voiceWsService.on("ai_transcript", handleAiTranscript);
     voiceWsService.on("ai_started_speaking", handleAiStartedSpeaking);
     voiceWsService.on("ai_finished_speaking", handleAiFinishedSpeaking);
     voiceWsService.on("ai_interrupted", handleAiInterrupted);
@@ -204,6 +218,7 @@ export function useVoiceCall() {
       voiceWsService.off("connection_established", handleConnectionEstablished);
       voiceWsService.off("disconnected", handleDisconnected);
       voiceWsService.off("binary_audio", handleBinaryAudio);
+      voiceWsService.off("ai_transcript", handleAiTranscript);
       voiceWsService.off("ai_started_speaking", handleAiStartedSpeaking);
       voiceWsService.off("ai_finished_speaking", handleAiFinishedSpeaking);
       voiceWsService.off("ai_interrupted", handleAiInterrupted);
