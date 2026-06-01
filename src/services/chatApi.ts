@@ -2,8 +2,8 @@ import { ApiError } from "./api";
 
 // export const CHAT_API_BASE_URL = "https://api.sankatseva.com/api/v1";
 // export const CHAT_WS_URL = "wss://api.sankatseva.com/api/v1/ws/chat";
-export const CHAT_API_BASE_URL = "http://192.168.3.15:8000/api/v1";
-export const CHAT_WS_URL = "ws://192.168.3.15:8000/api/v1/ws/chat";
+export const CHAT_API_BASE_URL = "http://192.168.3.11:8000/api/v1";
+export const CHAT_WS_URL = "ws://192.168.3.11:8000/api/v1/ws/chat";
 
 export type LLMProvider = "mistral" | "openai" | "gemini";
 

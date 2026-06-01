@@ -247,9 +247,13 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
     }
   }, []);
 
-  const startCall = useCallback(() => {
-    if (!token) return;
+  const startCall = useCallback(async () => {
     setStatus("Connecting...");
+    const validToken = await useAppStore.getState().getValidToken();
+    if (!validToken) {
+      setStatus("Disconnected");
+      return;
+    }
 
     if (hasInCallManager && InCallManager && typeof InCallManager.start === "function") {
       try {
@@ -264,8 +268,8 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
     }
 
     setSpeakerphone(isSpeakerOnRef.current);
-    voiceWsService.connect(token);
-  }, [setSpeakerphone, token, setStatus]);
+    voiceWsService.connect(validToken);
+  }, [setSpeakerphone, setStatus]);
 
   const endCall = useCallback(() => {
     stopListening();

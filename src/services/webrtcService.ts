@@ -4,7 +4,8 @@ import {
   RTCIceCandidate,
   MediaStream,
 } from 'react-native-webrtc';
-import { api } from './api'; // our axios instance
+import { API_BASE_URL } from './api';
+import { useAppStore } from '../store/appStore';
 
 class WebRTCService {
   public pc: RTCPeerConnection | null = null;
@@ -13,12 +14,43 @@ class WebRTCService {
   public onStream: ((stream: MediaStream) => void) | null = null;
   public onConnectionStateChange: ((state: string) => void) | null = null;
 
+  private async post(path: string, body: any): Promise<any> {
+    const token = await useAppStore.getState().getValidToken();
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      let errorMsg = 'API request failed';
+      try {
+        const parsed = JSON.parse(text);
+        errorMsg = parsed.message || parsed.detail || errorMsg;
+      } catch {
+        errorMsg = text || errorMsg;
+      }
+      throw new Error(errorMsg);
+    }
+
+    const resBody = await response.json();
+    if (resBody && typeof resBody === 'object') {
+      if ('success' in resBody && 'data' in resBody) {
+        return resBody.data;
+      }
+    }
+    return resBody;
+  }
+
   async startAvatarSession(avatarName: string = "Anna_public_3_20240108"): Promise<void> {
     try {
       // 1. Create a new session with backend (which calls HeyGen)
       console.log("[WebRTC] Creating new avatar session...");
-      const newResponse = await api.post('/avatar/new', { avatar_name: avatarName });
-      const data = newResponse.data;
+      const data = await this.post('/avatar/new', { avatar_name: avatarName });
       this.sessionId = data.session_id;
 
       // Extract ICE servers and SDP offer from HeyGen
@@ -31,7 +63,7 @@ class WebRTCService {
       });
 
       // 3. Handle Tracks (Audio/Video from Avatar)
-      this.pc.ontrack = (event) => {
+      (this.pc as any).ontrack = (event: any) => {
         console.log("[WebRTC] Received remote track:", event.track.kind);
         if (event.streams && event.streams[0]) {
           if (this.onStream) {
@@ -41,10 +73,10 @@ class WebRTCService {
       };
 
       // 4. Handle ICE Candidates
-      this.pc.onicecandidate = (event) => {
+      (this.pc as any).onicecandidate = (event: any) => {
         if (event.candidate && this.sessionId) {
           console.log("[WebRTC] Sending ICE candidate to backend");
-          api.post('/avatar/ice', {
+          this.post('/avatar/ice', {
             session_id: this.sessionId,
             candidate: event.candidate.toJSON(),
           }).catch(err => console.error("Failed to send ICE candidate", err));
@@ -52,7 +84,7 @@ class WebRTCService {
       };
 
       // 5. Handle Connection State
-      this.pc.onconnectionstatechange = () => {
+      (this.pc as any).onconnectionstatechange = () => {
         const state = this.pc?.connectionState || "unknown";
         console.log("[WebRTC] Connection state:", state);
         if (this.onConnectionStateChange) {
@@ -71,7 +103,7 @@ class WebRTCService {
 
       // 8. Send Answer to Backend (to start HeyGen session)
       console.log("[WebRTC] Starting session with HeyGen...");
-      await api.post('/avatar/start', {
+      await this.post('/avatar/start', {
         session_id: this.sessionId,
         sdp: answer,
       });
@@ -90,7 +122,7 @@ class WebRTCService {
       return;
     }
     try {
-      await api.post('/avatar/task', {
+      await this.post('/avatar/task', {
         session_id: this.sessionId,
         text: text,
       });
@@ -102,7 +134,7 @@ class WebRTCService {
   async closeSession(): Promise<void> {
     if (this.sessionId) {
       try {
-        await api.post('/avatar/stop', { session_id: this.sessionId });
+        await this.post('/avatar/stop', { session_id: this.sessionId });
       } catch (err) {
         console.error("Failed to stop session cleanly", err);
       }

@@ -1,9 +1,25 @@
 import { create } from "zustand";
 import { AppState as RNAppState } from "react-native";
 import * as Notifications from "expo-notifications";
+import { Buffer } from "buffer";
 import { authApi, getErrorMessage, User } from "../services/api";
 import { Chat, chatApi, ChatWebSocket, LLMProvider } from "../services/chatApi";
 import { tokenStorage } from "../services/tokenStorage";
+
+function isTokenExpired(token: string | null): boolean {
+  if (!token) return true;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return true;
+    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
+    const exp = payload.exp;
+    if (!exp) return false;
+    const now = Math.floor(Date.now() / 1000);
+    return now >= (exp - 10);
+  } catch {
+    return true;
+  }
+}
 
 type Message = { id: string; role: "user" | "assistant"; text: string };
 
@@ -34,6 +50,7 @@ type AppState = {
   googleAuth: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
+  getValidToken: () => Promise<string | null>;
   clearError: () => void;
   updateProfile: (name?: string, username?: string) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
@@ -260,11 +277,42 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const tokens = await tokenStorage.getTokens();
       if (tokens) {
+        let accessToken = tokens.accessToken;
+        let refreshToken = tokens.refreshToken;
+        let user = tokens.user as User;
+
+        if (isTokenExpired(accessToken)) {
+          console.log("Access token expired, attempting refresh...");
+          try {
+            const data = await authApi.refreshToken(refreshToken);
+            await tokenStorage.setTokens(data.access_token, data.refresh_token, {
+              id: data.user.id,
+              name: data.user.name,
+              username: data.user.username,
+              email: data.user.email,
+              phone: data.user.phone,
+            });
+            accessToken = data.access_token;
+            refreshToken = data.refresh_token;
+            user = data.user;
+          } catch (refreshErr) {
+            console.error("Failed to refresh token during session restore:", refreshErr);
+            await tokenStorage.clearTokens();
+            set({
+              isAuthenticated: false,
+              accessToken: null,
+              refreshToken: null,
+              user: null,
+            });
+            return;
+          }
+        }
+
         set({
           isAuthenticated: true,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          user: tokens.user as User,
+          accessToken,
+          refreshToken,
+          user,
         });
       }
     } catch (err) {
@@ -274,12 +322,42 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  getValidToken: async () => {
+    const { accessToken, refreshToken, logout } = get();
+    if (!accessToken) return null;
+    if (isTokenExpired(accessToken)) {
+      if (!refreshToken) return null;
+      console.log("Token expired, refreshing...");
+      try {
+        const data = await authApi.refreshToken(refreshToken);
+        await tokenStorage.setTokens(data.access_token, data.refresh_token, {
+          id: data.user.id,
+          name: data.user.name,
+          username: data.user.username,
+          email: data.user.email,
+          phone: data.user.phone,
+        });
+        set({
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          user: data.user,
+        });
+        return data.access_token;
+      } catch (err) {
+        console.error("Token refresh failed:", err);
+        await logout();
+        return null;
+      }
+    }
+    return accessToken;
+  },
+
   clearError: () => set({ error: null }),
 
   updateProfile: async (name?: string, username?: string) => {
     set({ isLoading: true, error: null });
     try {
-      const token = get().accessToken;
+      const token = await get().getValidToken();
       if (!token) throw new Error("Not authenticated");
       const updatedUser = await authApi.updateProfile(token, name, username);
       const tokens = await tokenStorage.getTokens();
@@ -299,7 +377,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   changePassword: async (newPassword: string) => {
     set({ isLoading: true, error: null });
     try {
-      const token = get().accessToken;
+      const token = await get().getValidToken();
       if (!token) throw new Error("Not authenticated");
       await authApi.changePassword(token, newPassword);
     } catch (err) {
@@ -330,7 +408,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadChats: async () => {
     set({ isChatLoading: true, chatError: null });
     try {
-      const token = get().accessToken;
+      const token = await get().getValidToken();
       if (!token) throw new Error("No access token");
       const chats = await chatApi.listChats(token);
       set({ chats });
@@ -353,7 +431,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCurrentChat: async (chat: Chat) => {
     set({ currentChat: chat, isChatLoading: true, chatError: null });
     try {
-      const token = get().accessToken;
+      const token = await get().getValidToken();
       if (!token) throw new Error("No access token");
       await get().loadChatHistory(chat.id);
     } catch (err) {
@@ -368,7 +446,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   createNewChat: async (title: string, model: LLMProvider) => {
     set({ isChatLoading: true, chatError: null });
     try {
-      const token = get().accessToken;
+      const token = await get().getValidToken();
       if (!token) throw new Error("No access token");
       const newChat = await chatApi.createChat(token, title, model);
       set((s) => ({
@@ -389,7 +467,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadChatHistory: async (chatId: string) => {
     set({ isChatLoading: true, chatError: null });
     try {
-      const token = get().accessToken;
+      const token = await get().getValidToken();
       if (!token) throw new Error("No access token");
       const history = await chatApi.fetchChatHistory(token, chatId);
       const messages = history.map((msg, idx) => ({
@@ -410,7 +488,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteChat: async (chatId: string) => {
     set({ isChatLoading: true, chatError: null });
     try {
-      const token = get().accessToken;
+      const token = await get().getValidToken();
       if (!token) throw new Error("No access token");
       await chatApi.deleteChat(token, chatId);
       
@@ -438,7 +516,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Clean up any existing connection first
     get().disconnectWebSocket();
     try {
-      const token = get().accessToken;
+      const token = await get().getValidToken();
       if (!token) throw new Error("No access token");
 
       const ws = new ChatWebSocket(token);

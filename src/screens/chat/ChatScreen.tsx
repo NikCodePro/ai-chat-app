@@ -53,7 +53,6 @@ export function ChatScreen({ navigation }: Props) {
   const [isSending, setIsSending] = useState(false);
   const [showChatList, setShowChatList] = useState(false);
 
-  const token = useAppStore((s) => s.accessToken);
   const flatListRef = useRef<FlatList>(null);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -109,13 +108,14 @@ export function ChatScreen({ navigation }: Props) {
       }
 
       const wavBase64 = audioService.createWavFromChunks(chunks, 16000);
-      if (!token) {
-        Alert.alert("Error", "Authentication token is missing");
+      const validToken = await useAppStore.getState().getValidToken();
+      if (!validToken) {
+        Alert.alert("Error", "Authentication token is missing or expired");
         setIsTranscribing(false);
         return;
       }
 
-      const text = await chatApi.transcribeAudio(token, wavBase64);
+      const text = await chatApi.transcribeAudio(validToken, wavBase64);
       if (text) {
         setDraft((prev) => (prev ? `${prev} ${text}` : text));
       }
