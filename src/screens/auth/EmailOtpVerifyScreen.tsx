@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import { CustomButton } from "../../components/CustomButton";
 import { CustomInput } from "../../components/CustomInput";
 import { GradientCard } from "../../components/GradientCard";
@@ -23,6 +23,7 @@ export function EmailOtpVerifyScreen({ navigation, route }: Props) {
   const clearError = useAppStore((s) => s.clearError);
 
   const handleVerifyOtp = async () => {
+    Keyboard.dismiss();
     if (!otp.trim() || otp.length !== 6) {
       Alert.alert("Error", "Please enter a valid 6-digit OTP");
       return;
@@ -38,6 +39,7 @@ export function EmailOtpVerifyScreen({ navigation, route }: Props) {
   };
 
   const handleResendOtp = async () => {
+    Keyboard.dismiss();
     try {
       await signupInitiate(email);
       Alert.alert("Success", "OTP resent successfully");
@@ -70,7 +72,15 @@ export function EmailOtpVerifyScreen({ navigation, route }: Props) {
               onPress={handleVerifyOtp}
               disabled={isLoading}
             />
-            <Pressable onPress={handleResendOtp} disabled={isLoading}>
+            <Pressable 
+              onPress={handleResendOtp} 
+              disabled={isLoading}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+              style={({ pressed }) => [
+                styles.resendBtn,
+                pressed && styles.pressed
+              ]}
+            >
               <Text style={styles.link}>Resend OTP</Text>
             </Pressable>
           </View>
@@ -104,6 +114,14 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: typography.caption,
     fontWeight: typography.weights.semibold,
+  },
+  resendBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.xs,
     marginTop: spacing.xs,
+  },
+  pressed: {
+    opacity: 0.7,
   },
 });
