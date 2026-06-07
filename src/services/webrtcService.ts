@@ -1,17 +1,12 @@
-import {
-  RTCPeerConnection,
-  RTCSessionDescription,
-  RTCIceCandidate,
-  MediaStream,
-} from 'react-native-webrtc';
 import { API_BASE_URL } from './api';
 import { useAppStore } from '../store/appStore';
+import { Room, RoomEvent, RemoteTrack, RemoteParticipant } from 'livekit-client';
 
 class WebRTCService {
-  public pc: RTCPeerConnection | null = null;
+  public room: Room | null = null;
   public sessionId: string | null = null;
   
-  public onStream: ((stream: MediaStream) => void) | null = null;
+  public onVideoTrack: ((track: RemoteTrack) => void) | null = null;
   public onConnectionStateChange: ((state: string) => void) | null = null;
 
   private async post(path: string, body: any): Promise<any> {
@@ -48,107 +43,64 @@ class WebRTCService {
 
   async startAvatarSession(avatarName: string = "Anna_public_3_20240108"): Promise<void> {
     try {
-      // 1. Create a new session with backend (which calls HeyGen)
-      console.log("[WebRTC] Creating new avatar session...");
-      const data = await this.post('/avatar/new', { avatar_name: avatarName });
+      console.log("[LiveKit] Requesting new avatar session token...");
+      const data = await this.post('/avatar/token', { avatar_name: avatarName });
+      
       this.sessionId = data.session_id;
+      const livekitUrl = data.livekit_url;
+      const livekitToken = data.livekit_client_token;
 
-      // Extract ICE servers and SDP offer from HeyGen
-      const iceServers = data.ice_servers2 || [];
-      const offer = data.sdp;
+      if (!livekitUrl || !livekitToken) {
+        throw new Error("Missing LiveKit URL or Token from backend");
+      }
 
-      // 2. Initialize RTCPeerConnection
-      this.pc = new RTCPeerConnection({
-        iceServers: iceServers,
+      console.log("[LiveKit] Initializing Room...");
+      this.room = new Room();
+
+      this.room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, publication, participant: RemoteParticipant) => {
+        console.log("[LiveKit] Track subscribed:", track.kind);
+        if (track.kind === 'video' && this.onVideoTrack) {
+          this.onVideoTrack(track);
+        }
       });
 
-      // 3. Handle Tracks (Audio/Video from Avatar)
-      (this.pc as any).ontrack = (event: any) => {
-        console.log("[WebRTC] Received remote track:", event.track.kind);
-        if (event.streams && event.streams[0]) {
-          if (this.onStream) {
-            this.onStream(event.streams[0]);
-          }
-        }
-      };
-
-      // 4. Handle ICE Candidates
-      (this.pc as any).onicecandidate = (event: any) => {
-        if (event.candidate && this.sessionId) {
-          console.log("[WebRTC] Sending ICE candidate to backend");
-          this.post('/avatar/ice', {
-            session_id: this.sessionId,
-            candidate: event.candidate.toJSON(),
-          }).catch(err => console.error("Failed to send ICE candidate", err));
-        }
-      };
-
-      // 5. Handle Connection State
-      (this.pc as any).onconnectionstatechange = () => {
-        const state = this.pc?.connectionState || "unknown";
-        console.log("[WebRTC] Connection state:", state);
+      this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
+        console.log("[LiveKit] Connection state:", state);
         if (this.onConnectionStateChange) {
           this.onConnectionStateChange(state);
         }
-      };
-
-      // 6. Set Remote Description (HeyGen's Offer)
-      console.log("[WebRTC] Setting remote description...");
-      await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
-
-      // 7. Create Answer and set Local Description
-      console.log("[WebRTC] Creating answer...");
-      const answer = await this.pc.createAnswer();
-      await this.pc.setLocalDescription(answer);
-
-      // 8. Send Answer to Backend (to start HeyGen session)
-      console.log("[WebRTC] Starting session with HeyGen...");
-      await this.post('/avatar/start', {
-        session_id: this.sessionId,
-        sdp: answer,
       });
 
-      console.log("[WebRTC] Avatar session started successfully.");
+      console.log("[LiveKit] Connecting to room...");
+      await this.room.connect(livekitUrl, livekitToken);
+      console.log("[LiveKit] Connected successfully!");
+
     } catch (error) {
-      console.error("[WebRTC] Failed to start avatar session:", error);
+      console.error("[LiveKit] Failed to start avatar session:", error);
       this.closeSession();
       throw error;
     }
   }
 
   async sendTask(text: string): Promise<void> {
-    if (!this.sessionId) {
-      console.warn("Cannot send task, no active avatar session.");
-      return;
-    }
-    try {
-      await this.post('/avatar/task', {
-        session_id: this.sessionId,
-        text: text,
-      });
-    } catch (error) {
-      console.error("[WebRTC] Failed to send task:", error);
-    }
+    // Note: LiveAvatar might expect tasks differently.
+    // If you need to send text, you usually send it via data channels or a specific LiveAvatar API.
+    // Assuming backend still handles this if we keep the same task logic?
+    // Actually, LiveKit agents usually listen to microphone audio directly!
+    // But since you have custom audio pipeline, you might need to check HeyGen docs.
+    console.warn("sendTask is not fully implemented for LiveAvatar via token yet.");
   }
 
   async closeSession(): Promise<void> {
-    if (this.sessionId) {
-      try {
-        await this.post('/avatar/stop', { session_id: this.sessionId });
-      } catch (err) {
-        console.error("Failed to stop session cleanly", err);
-      }
-      this.sessionId = null;
-    }
-
-    if (this.pc) {
-      this.pc.close();
-      this.pc = null;
+    if (this.room) {
+      this.room.disconnect();
+      this.room = null;
     }
     
-    this.onStream = null;
+    this.onVideoTrack = null;
     this.onConnectionStateChange = null;
-    console.log("[WebRTC] Avatar session closed.");
+    this.sessionId = null;
+    console.log("[LiveKit] Avatar session closed.");
   }
 }
 

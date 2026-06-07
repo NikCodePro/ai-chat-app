@@ -16,9 +16,9 @@ export type CallStatus =
   | "AI Thinking..."
   | "AI Speaking...";
 
-const SPEECH_RMS_THRESHOLD = 1500;       // volume threshold to detect user speech
-const INTERRUPT_RMS_THRESHOLD = 3000;    // higher threshold to avoid speaker echo loops
-const SILENCE_TIMEOUT_MS = 600;          // 600ms silence threshold for turn-end
+const SPEECH_RMS_THRESHOLD = 2000;       // Lower threshold because hardware Noise Suppression cleans the signal
+const INTERRUPT_RMS_THRESHOLD = 3500;    // Lower threshold because hardware Echo Cancellation removes the speaker output
+const SILENCE_TIMEOUT_MS = 1500;         // 1.5s silence threshold to prevent early cut-offs
 
 function calculateRMS(base64Data: string): number {
   try {

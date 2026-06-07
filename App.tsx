@@ -1,6 +1,22 @@
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
+// ── LiveKit Polyfills & Globals ──
+if (typeof globalThis.DOMException === "undefined") {
+  class DOMException extends Error {
+    code: number;
+    constructor(message?: string, name?: string) {
+      super(message);
+      this.name = name ?? "Error";
+      this.code = 0;
+    }
+  }
+  globalThis.DOMException = DOMException as any;
+}
+import { registerGlobals } from '@livekit/react-native';
+registerGlobals();
+// ──────────────────────────────────
+
 import { StatusBar } from 'expo-status-bar';
 import { LogBox } from 'react-native';
 import * as Notifications from 'expo-notifications';

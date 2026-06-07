@@ -22,9 +22,9 @@ import { debugService } from "./debugService";
  */
 
 // 24kHz, 16-bit mono = 48000 bytes per second
-const FIRST_SEGMENT_BYTES = 4800;    // ~100ms — faster initial response (was 300ms)
-const NORMAL_SEGMENT_BYTES = 9600;   // ~200ms — gapless throughput (was 300ms)
-const FLUSH_DELAY_MS = 80;           // flush partial buffer after silence
+const FIRST_SEGMENT_BYTES = 36000;   // ~750ms — consistent starting buffer
+const NORMAL_SEGMENT_BYTES = 36000;  // ~750ms — perfectly matched to prevent underruns
+const FLUSH_DELAY_MS = 250;          // flush partial buffer after silence
 
 export class AudioService {
   // ── Playback state ──
@@ -70,7 +70,7 @@ export class AudioService {
       sampleRate: 16000,
       channels: 1 as 1 | 2,
       bitsPerSample: 16 as 8 | 16,
-      audioSource: 6, // VOICE_RECOGNITION for ultra-low latency speech processing
+      audioSource: 7, // 7 = VOICE_COMMUNICATION (enables Acoustic Echo Cancellation and Noise Suppression natively)
       wavFile: "audio.wav",
       bufferSize: 4096, // Smaller buffer for more frequent, lower-latency mic chunks
     };
@@ -128,6 +128,30 @@ export class AudioService {
     return Buffer.concat([header, pcmBuffer]);
   }
 
+  // ── Smooth chunk boundaries to prevent popping ──
+  private applyCrossfadeFades(pcmBuffer: Buffer, fadeMs: number = 10, sampleRate: number = 24000): Buffer {
+    const fadeSamples = Math.floor((sampleRate * fadeMs) / 1000);
+    const fadeBytes = fadeSamples * 2; // 16-bit mono
+
+    if (pcmBuffer.length < fadeBytes * 2) return pcmBuffer;
+
+    // Fade In
+    for (let i = 0; i < fadeBytes; i += 2) {
+      const sample = pcmBuffer.readInt16LE(i);
+      const multiplier = i / fadeBytes;
+      pcmBuffer.writeInt16LE(Math.round(sample * multiplier), i);
+    }
+
+    // Fade Out
+    for (let i = 0; i < fadeBytes; i += 2) {
+      const pos = pcmBuffer.length - fadeBytes + i;
+      const sample = pcmBuffer.readInt16LE(pos);
+      const multiplier = 1 - (i / fadeBytes);
+      pcmBuffer.writeInt16LE(Math.round(sample * multiplier), pos);
+    }
+    return pcmBuffer;
+  }
+
   // ── Public: queue an incoming server audio chunk ──
   public queueAudioChunk(base64Data: string, chunkId?: number) {
     try {
@@ -150,9 +174,9 @@ export class AudioService {
 
       // Extract complete segments from the buffer
       while (this.pcmBuffer.length >= targetSize) {
-        const segmentPcm = this.pcmBuffer.subarray(0, targetSize);
+        const segmentPcm = Buffer.from(this.pcmBuffer.subarray(0, targetSize));
         this.pcmBuffer = Buffer.from(this.pcmBuffer.subarray(targetSize));
-        this.enqueueSegment(Buffer.from(segmentPcm));
+        this.enqueueSegment(this.applyCrossfadeFades(segmentPcm));
         this.isFirstSegment = false;
       }
 
@@ -175,7 +199,7 @@ export class AudioService {
     if (this.pcmBuffer.length > 0) {
       const remaining = Buffer.from(this.pcmBuffer);
       this.pcmBuffer = Buffer.alloc(0);
-      this.enqueueSegment(remaining);
+      this.enqueueSegment(this.applyCrossfadeFades(remaining));
     }
   }
 

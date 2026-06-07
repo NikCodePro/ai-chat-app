@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Text, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { RTCView, MediaStream } from "react-native-webrtc";
+import { VideoView } from "@livekit/react-native";
+import type { RemoteVideoTrack } from "livekit-client";
 import { useNavigation } from "@react-navigation/native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
@@ -14,7 +15,7 @@ import { typography } from "../../theme/typography";
 
 export function VideoCallScreen() {
   const navigation = useNavigation();
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [videoTrack, setVideoTrack] = useState<RemoteVideoTrack | null>(null);
   const [isAvatarReady, setIsAvatarReady] = useState(false);
 
   const {
@@ -36,8 +37,8 @@ export function VideoCallScreen() {
 
   useEffect(() => {
     // 1. Setup WebRTC Callbacks
-    webrtcService.onStream = (mediaStream) => {
-      setStream(mediaStream);
+    webrtcService.onVideoTrack = (track) => {
+      setVideoTrack(track as RemoteVideoTrack);
     };
 
     webrtcService.onConnectionStateChange = (state) => {
@@ -78,9 +79,9 @@ export function VideoCallScreen() {
       </View>
 
       <View style={styles.videoContainer}>
-        {stream ? (
-          <RTCView
-            streamURL={stream.toURL()}
+        {videoTrack ? (
+          <VideoView
+            videoTrack={videoTrack}
             style={styles.rtcView}
             objectFit="cover"
           />

@@ -35,8 +35,6 @@ export type MainStackParamList = {
   Home: undefined;
   Chat: undefined;
   VoiceCall: undefined;
-  TurnBasedCall: undefined;
   VideoCall: undefined;
-  VoiceAssistant: undefined;
   Profile: undefined;
 };

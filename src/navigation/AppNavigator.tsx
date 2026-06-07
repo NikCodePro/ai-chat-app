@@ -15,9 +15,7 @@ import { ForgotPasswordOtpScreen } from "../screens/auth/ForgotPasswordOtpScreen
 import { ResetPasswordScreen } from "../screens/auth/ResetPasswordScreen";
 import { ChatScreen } from "../screens/chat/ChatScreen";
 import { VoiceCallScreen } from "../screens/chat/VoiceCallScreen";
-import { TurnBasedCallScreen } from "../screens/chat/TurnBasedCallScreen";
 import { VideoCallScreen } from "../screens/chat/VideoCallScreen";
-import { VoiceAssistantScreen } from "../screens/chat/VoiceAssistantScreen";
 import { HomeScreen } from "../screens/home/HomeScreen";
 import { ProfileScreen } from "../screens/profile/ProfileScreen";
 import { useAppStore } from "../store/appStore";
@@ -80,18 +78,8 @@ function MainNavigator() {
         options={{ presentation: 'fullScreenModal' }} 
       />
       <MainStack.Screen 
-        name="TurnBasedCall" 
-        component={TurnBasedCallScreen} 
-        options={{ presentation: 'fullScreenModal' }} 
-      />
-      <MainStack.Screen 
         name="VideoCall" 
         component={VideoCallScreen} 
-        options={{ presentation: 'fullScreenModal' }} 
-      />
-      <MainStack.Screen 
-        name="VoiceAssistant" 
-        component={VoiceAssistantScreen} 
         options={{ presentation: 'fullScreenModal' }} 
       />
     </MainStack.Navigator>
