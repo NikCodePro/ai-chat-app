@@ -82,7 +82,7 @@ export function ForgotPasswordOtpScreen() {
             <TextInput
               style={styles.input}
               placeholder="Enter OTP"
-              placeholderTextColor={colors.textLight}
+              placeholderTextColor={colors.muted}
               value={code}
               onChangeText={setCode}
               keyboardType="number-pad"
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: colors.textLight,
+    color: colors.muted,
   },
   form: {
     gap: 20,
@@ -159,13 +159,13 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   input: {
-    backgroundColor: colors.surface,
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
     color: colors.text,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.cardBorder,
     textAlign: "center",
     letterSpacing: 4,
   },

@@ -6,20 +6,25 @@ import { useDebugStore } from "../store/useDebugStore";
 import { debugService } from "./debugService";
 
 /**
- * Client-side PCM buffering strategy:
+ * Client-side PCM buffering & streaming playback strategy:
+ *
  * Instead of creating a new Audio.Sound for every tiny chunk the server sends
  * (which causes massive stutter on React Native), we accumulate raw PCM bytes
- * and only instantiate a player when we have enough data for smooth playback.
+ * into fixed-size segments and use a **pre-loading** pipeline:
  *
- * - First segment:  14400 bytes (~300ms at 24kHz/16bit/mono) — fast start
- * - Later segments: 48000 bytes (~1 second) — smooth, continuous playback
- * - A 150ms flush timer ensures the final partial buffer always plays.
+ * 1. While segment N is playing, segment N+1 is already loaded as an Audio.Sound
+ *    and ready to start instantly when N finishes — eliminating inter-segment gaps.
+ *
+ * 2. Segments are kept small (300ms / 14400 bytes at 24kHz/16bit/mono) for
+ *    consistent low latency throughout playback.
+ *
+ * 3. A short flush timer (80ms) ensures the final partial buffer always plays.
  */
 
 // 24kHz, 16-bit mono = 48000 bytes per second
-const FIRST_SEGMENT_BYTES = 14400;   // ~300ms — low initial latency
-const NORMAL_SEGMENT_BYTES = 48000;  // ~1 second — smooth continuous playback
-const FLUSH_DELAY_MS = 150;          // flush partial buffer after silence
+const FIRST_SEGMENT_BYTES = 4800;    // ~100ms — faster initial response (was 300ms)
+const NORMAL_SEGMENT_BYTES = 9600;   // ~200ms — gapless throughput (was 300ms)
+const FLUSH_DELAY_MS = 80;           // flush partial buffer after silence
 
 export class AudioService {
   // ── Playback state ──
@@ -27,8 +32,9 @@ export class AudioService {
   private segmentQueue: { id: number; data: string }[] = [];
   private isPlaying = false;
   private currentSound: Audio.Sound | null = null;
+  private preloadedSound: Audio.Sound | null = null;
+  private preloadedSegmentId: number | null = null;
   private segmentCounter = 0;
-  private rxChunkIdCounter = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private isFirstSegment = true;
 
@@ -39,10 +45,12 @@ export class AudioService {
 
   public setGated(gated: boolean) {
     this.isGated = gated;
-    if (gated) {
-      console.log("[AUDIO-GATE] Mic output gated — dropping chunks");
-    } else {
-      console.log("[AUDIO-GATE] Mic output un-gated — resuming send");
+    if (__DEV__) {
+      if (gated) {
+        console.log("[AUDIO-GATE] Mic output gated — dropping chunks");
+      } else {
+        console.log("[AUDIO-GATE] Mic output un-gated — resuming send");
+      }
     }
   }
 
@@ -64,7 +72,7 @@ export class AudioService {
       bitsPerSample: 16 as 8 | 16,
       audioSource: 6, // VOICE_RECOGNITION for ultra-low latency speech processing
       wavFile: "audio.wav",
-      bufferSize: 8192,
+      bufferSize: 4096, // Smaller buffer for more frequent, lower-latency mic chunks
     };
 
     LiveAudioStream.init(options);
@@ -157,7 +165,7 @@ export class AudioService {
       }
     } catch (e) {
       debugService.onDroppedChunk();
-      console.error("Error buffering PCM chunk:", e);
+      if (__DEV__) console.error("Error buffering PCM chunk:", e);
     }
   }
 
@@ -180,12 +188,44 @@ export class AudioService {
     this.segmentQueue.push({ id: this.segmentCounter, data: wavBase64 });
     debugService.onQueueUpdate(this.segmentQueue.length);
 
-    console.log(
-      `[BUFFER] Segment ${this.segmentCounter} | pcm: ${pcmData.length} bytes | queue: ${this.segmentQueue.length}`
-    );
+    if (__DEV__) {
+      console.log(
+        `[BUFFER] Segment ${this.segmentCounter} | pcm: ${pcmData.length} bytes | queue: ${this.segmentQueue.length}`
+      );
+    }
 
     if (!this.isPlaying) {
       this.playNextSegment();
+    } else {
+      // While current segment plays, pre-load the next one for gapless transition
+      this.tryPreloadNext();
+    }
+  }
+
+  // ── Pre-load the next segment while current one is playing ──
+  private async tryPreloadNext() {
+    // Only preload if we don't already have one ready and there's something to preload
+    if (this.preloadedSound || this.segmentQueue.length === 0) return;
+
+    const segment = this.segmentQueue[0]; // peek, don't shift yet
+    if (!segment) return;
+
+    try {
+      const uri = `data:audio/wav;base64,${segment.data}`;
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: false } // Create but don't play yet
+      );
+      this.preloadedSound = sound;
+      this.preloadedSegmentId = segment.id;
+      if (__DEV__) {
+        console.log(`[PRELOAD] Ready: segment=${segment.id}`);
+      }
+    } catch (e) {
+      // Preload failed — will fall back to normal load in playNextSegment
+      this.preloadedSound = null;
+      this.preloadedSegmentId = null;
+      if (__DEV__) console.warn("[PRELOAD] Failed:", e);
     }
   }
 
@@ -203,18 +243,53 @@ export class AudioService {
     debugService.onQueueUpdate(this.segmentQueue.length);
 
     try {
-      const uri = `data:audio/wav;base64,${segment.data}`;
-      const { sound } = await Audio.Sound.createAsync(
-        { uri },
-        { shouldPlay: true, progressUpdateIntervalMillis: 50 }
-      );
+      let sound: Audio.Sound;
+
+      // Check if we already pre-loaded this segment
+      if (this.preloadedSound && this.preloadedSegmentId === segment.id) {
+        sound = this.preloadedSound;
+        this.preloadedSound = null;
+        this.preloadedSegmentId = null;
+        // Start playback on the pre-loaded sound
+        await sound.playAsync();
+      } else {
+        // Discard stale preload if segment ID doesn't match
+        if (this.preloadedSound) {
+          this.preloadedSound.unloadAsync().catch(() => {});
+          this.preloadedSound = null;
+          this.preloadedSegmentId = null;
+        }
+        // Create and play immediately
+        const uri = `data:audio/wav;base64,${segment.data}`;
+        const result = await Audio.Sound.createAsync(
+          { uri },
+          { shouldPlay: true }
+        );
+        sound = result.sound;
+      }
 
       this.currentSound = sound;
       debugService.onPlaybackStart(segment.id);
-      console.log(`[PLAY_START] segment=${segment.id}`);
+      if (__DEV__) {
+        console.log(`[PLAY_START] segment=${segment.id}`);
+      }
+
+      // Immediately start pre-loading the next segment for gapless playback
+      this.tryPreloadNext();
 
       sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
+        if (!status.isLoaded) {
+          // Audio load error — unblock the pipeline so the next segment can play.
+          if ("error" in status) {
+            if (__DEV__) console.warn("[PLAY] Load error:", status.error);
+            sound.unloadAsync().catch(() => {});
+            if (this.currentSound === sound) this.currentSound = null;
+            this.isPlaying = false;
+            this.playNextSegment();
+          }
+          return;
+        }
+        if (status.didJustFinish) {
           sound.unloadAsync().catch(() => {});
           if (this.currentSound === sound) {
             this.currentSound = null;
@@ -224,7 +299,7 @@ export class AudioService {
         }
       });
     } catch (e) {
-      console.error("Audio playback error", e);
+      if (__DEV__) console.error("Audio playback error", e);
       debugService.onDroppedChunk();
       this.isPlaying = false;
       this.playNextSegment();
@@ -251,6 +326,13 @@ export class AudioService {
       await this.currentSound.stopAsync().catch(() => {});
       await this.currentSound.unloadAsync().catch(() => {});
       this.currentSound = null;
+    }
+
+    // Unload preloaded sound
+    if (this.preloadedSound) {
+      await this.preloadedSound.unloadAsync().catch(() => {});
+      this.preloadedSound = null;
+      this.preloadedSegmentId = null;
     }
 
     this.isPlaying = false;

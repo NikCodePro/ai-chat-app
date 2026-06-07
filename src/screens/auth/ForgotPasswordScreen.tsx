@@ -66,7 +66,7 @@ export function ForgotPasswordScreen() {
             <TextInput
               style={styles.input}
               placeholder="e.g. user@example.com or +919876543210"
-              placeholderTextColor={colors.textLight}
+              placeholderTextColor={colors.muted}
               value={identifier}
               onChangeText={setIdentifier}
               autoCapitalize="none"
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: colors.textLight,
+    color: colors.muted,
   },
   form: {
     gap: 20,
@@ -133,13 +133,13 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   input: {
-    backgroundColor: colors.surface,
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
     color: colors.text,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.cardBorder,
   },
   nextButton: {
     backgroundColor: colors.primary,

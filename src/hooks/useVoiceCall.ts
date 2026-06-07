@@ -87,7 +87,7 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
       // 1. If AI is speaking: check for user interruption
       if (currentStatus === "AI Speaking...") {
         if (rms > INTERRUPT_RMS_THRESHOLD) {
-          console.log(`[VAD] User interrupted AI! RMS: ${rms}`);
+          if (__DEV__) console.log(`[VAD] User interrupted AI! RMS: ${rms}`);
           audioService.stopPlayback();
           isGatedRef.current = false;
           setStatus("Listening...");
@@ -111,7 +111,7 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
       if (currentStatus === "Listening..." || currentStatus === "AI Thinking...") {
         if (isSpeech) {
           if (currentStatus === "AI Thinking...") {
-            console.log("[VAD] User resumed speaking. Transitioning back to Listening...");
+            if (__DEV__) console.log("[VAD] User resumed speaking. Transitioning back to Listening...");
             setStatus("Listening...");
           }
           userHasSpoken = true;
@@ -121,7 +121,7 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
             silenceStart = Date.now();
           } else if (Date.now() - silenceStart > SILENCE_TIMEOUT_MS) {
             if (currentStatus === "Listening...") {
-              console.log("[VAD] Client detected silence. Transitioning to Thinking...");
+              if (__DEV__) console.log("[VAD] Client detected silence. Transitioning to Thinking...");
               setStatus("AI Thinking...");
             }
             userHasSpoken = false;
@@ -147,12 +147,11 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
     if (!token) return;
 
     const handleConnectionEstablished = () => {
-      setStatus("Connecting...");
-      setTimeout(() => {
-        if (!isMutedRef.current) {
-          startListening();
-        }
-      }, 500);
+      if (!isMutedRef.current) {
+        startListening();
+      } else {
+        setStatus("Connecting...");
+      }
     };
 
     const handleDisconnected = () => {

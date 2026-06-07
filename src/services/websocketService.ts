@@ -20,12 +20,11 @@ export class VoiceWebSocketService {
     }
 
     this.ws = new WebSocket(`${this.url}?token=${token}`);
-    // We still support binary frames just in case, but primary audio will be JSON
     this.ws.binaryType = "arraybuffer";
 
     this.ws.onopen = () => {
       this.isConnected = true;
-      debugService.updateMetric("reconnects", 0); // or increment if tracking lifetime
+      debugService.updateMetric("reconnects", 0);
     };
 
     this.ws.onmessage = (event) => {
@@ -37,7 +36,9 @@ export class VoiceWebSocketService {
             const serverTs = data.server_timestamp;
             const latency = recvTs - serverTs;
             useDebugStore.getState().setNetworkLatency(latency);
-            console.log(`[DEBUG-FRONTEND-RX] ai_audio_chunk ${data.chunk_id} | backend_ts: ${serverTs} | recv_ts: ${recvTs} | network_latency: ${latency}ms | size: ${data.audio.length} bytes`);
+            if (__DEV__) {
+              console.log(`[RX] ai_audio #${data.chunk_id} | latency: ${latency}ms | size: ${data.audio.length}`);
+            }
             debugService.onWsReceive(data.chunk_id, data.timestamp, data.audio.length, data.server_timestamp);
             this.emit("binary_audio", { audio: data.audio, chunk_id: data.chunk_id });
           } else {
@@ -47,7 +48,7 @@ export class VoiceWebSocketService {
           console.error("Failed to parse websocket message", err);
         }
       } else {
-        // Fallback for raw binary frame if server still sends it
+        // Binary frame from server (future optimization)
         try {
           const buffer = Buffer.from(event.data as ArrayBuffer);
           const base64Audio = buffer.toString("base64");
@@ -80,20 +81,26 @@ export class VoiceWebSocketService {
     this.sendMessage({ type: "client_start_stream" });
   }
 
+  /**
+   * Send mic audio as a raw binary WebSocket frame (plain PCM, no header).
+   * Eliminates the ~33% base64 overhead and avoids JSON serialization
+   * on every mic chunk (which fires 10-20x per second).
+   */
   public sendAudioChunk(base64Data: string) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const chunkId = debugService.getNextTxChunkId();
-      const timestamp = Date.now();
       debugService.onMicrophoneChunk();
-      debugService.onWsSend(chunkId, timestamp, base64Data.length);
+      debugService.onWsSend(chunkId, Date.now(), base64Data.length);
 
-      const payload = {
-        type: "client_audio",
-        audio: base64Data,
-        chunk_id: chunkId,
-        timestamp: timestamp
-      };
-      this.ws.send(JSON.stringify(payload));
+      try {
+        // Decode base64 to raw PCM and send as a plain binary frame.
+        // No header prepended — the backend forwards bytes directly to Gemini,
+        // so any non-PCM prefix would corrupt recognition.
+        const pcmBytes = Buffer.from(base64Data, "base64");
+        this.ws.send(pcmBytes);
+      } catch (e) {
+        if (__DEV__) console.error("[WS] Binary send error:", e);
+      }
     }
   }
 
@@ -135,6 +142,6 @@ export class VoiceWebSocketService {
 }
 
 // Ensure you point this to your actual backend IP
-const BACKEND_WS_URL = "ws://192.168.3.11:8000/api/v1/ws/voice";
+const BACKEND_WS_URL = "ws://192.168.1.16:8000/api/v1/ws/voice";
 // const BACKEND_WS_URL = "wss://api.sankatseva.com/api/v1/ws/voice";
 export const voiceWsService = new VoiceWebSocketService(BACKEND_WS_URL);

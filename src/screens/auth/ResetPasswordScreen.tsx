@@ -78,7 +78,7 @@ export function ResetPasswordScreen() {
               <TextInput
                 style={styles.passwordInput}
                 placeholder="Must be at least 8 characters"
-                placeholderTextColor={colors.textLight}
+                placeholderTextColor={colors.muted}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -102,7 +102,7 @@ export function ResetPasswordScreen() {
               <TextInput
                 style={styles.passwordInput}
                 placeholder="Re-enter your new password"
-                placeholderTextColor={colors.textLight}
+                placeholderTextColor={colors.muted}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 secureTextEntry={!showPassword}
@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: colors.textLight,
+    color: colors.muted,
   },
   form: {
     gap: 20,
@@ -172,10 +172,10 @@ const styles = StyleSheet.create({
   passwordContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.surface,
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.cardBorder,
   },
   passwordInput: {
     flex: 1,

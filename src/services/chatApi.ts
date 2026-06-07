@@ -2,8 +2,9 @@ import { ApiError } from "./api";
 
 // export const CHAT_API_BASE_URL = "https://api.sankatseva.com/api/v1";
 // export const CHAT_WS_URL = "wss://api.sankatseva.com/api/v1/ws/chat";
-export const CHAT_API_BASE_URL = "http://192.168.3.11:8000/api/v1";
-export const CHAT_WS_URL = "ws://192.168.3.11:8000/api/v1/ws/chat";
+export const CHAT_API_BASE_URL = "http://192.168.1.16:8000/api/v1";
+export const CHAT_WS_URL = "ws://192.168.1.16:8000/api/v1/ws/chat";
+export const TURN_BASED_WS_URL = "ws://192.168.1.16:8000/api/v1/ws/turn_based";
 
 export type LLMProvider = "mistral" | "openai" | "gemini";
 
@@ -24,10 +25,10 @@ export interface Chat {
 }
 
 export interface WebSocketMessage {
-  type: "start" | "chunk" | "end" | "title_update";
+  type: "start" | "chunk" | "end" | "title_update" | "user_transcript" | "error";
   content?: string;
-  title?: string;
   chat_id: string;
+  title?: string;
 }
 
 // HTTP Chat Management API
@@ -219,6 +220,90 @@ export class ChatWebSocket {
     this.ws.send(
       JSON.stringify({
         message,
+        chat_id: chatId,
+        provider,
+      }),
+    );
+  }
+
+  onMessage(handler: (msg: WebSocketMessage) => void): void {
+    this.messageHandlers.push(handler);
+  }
+
+  onError(handler: (error: Error) => void): void {
+    this.errorHandlers.push(handler);
+  }
+
+  disconnect(): void {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+      this.isConnected = false;
+    }
+  }
+
+  isReady(): boolean {
+    return this.isConnected && this.ws !== null;
+  }
+}
+
+export class TurnBasedWebSocket {
+  private ws: WebSocket | null = null;
+  private url: string;
+  private token: string;
+  private isConnected = false;
+  private messageHandlers: ((msg: WebSocketMessage) => void)[] = [];
+  private errorHandlers: ((error: Error) => void)[] = [];
+
+  constructor(token: string) {
+    this.token = token;
+    this.url = `${TURN_BASED_WS_URL}?token=${token}`;
+  }
+
+  connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.ws = new WebSocket(this.url);
+
+        this.ws.onopen = () => {
+          this.isConnected = true;
+          console.log("TurnBased WebSocket connected");
+          resolve();
+        };
+
+        this.ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data) as WebSocketMessage;
+            this.messageHandlers.forEach((handler) => handler(message));
+          } catch (err) {
+            console.error("Failed to parse TurnBased WebSocket message:", err);
+          }
+        };
+
+        this.ws.onerror = (event) => {
+          const error = new Error("TurnBased WebSocket error occurred");
+          this.errorHandlers.forEach((handler) => handler(error));
+          reject(error);
+        };
+
+        this.ws.onclose = () => {
+          this.isConnected = false;
+          console.log("TurnBased WebSocket disconnected");
+        };
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  sendAudioChunk(base64Audio: string, chatId: string, provider: LLMProvider): void {
+    if (!this.isConnected || !this.ws) {
+      throw new Error("WebSocket is not connected");
+    }
+
+    this.ws.send(
+      JSON.stringify({
+        audio: base64Audio,
         chat_id: chatId,
         provider,
       }),

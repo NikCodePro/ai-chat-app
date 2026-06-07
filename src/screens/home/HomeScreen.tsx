@@ -127,6 +127,48 @@ export function HomeScreen({ navigation }: Props) {
           </GradientCard>
         </Pressable>
 
+        <Pressable
+          style={styles.cardWrap}
+          onPress={() => navigation.navigate("TurnBasedCall")}
+        >
+          <GradientCard>
+            <View style={styles.cardRow}>
+              <Ionicons
+                name="chatbubbles-outline"
+                size={26}
+                color="#00D2D3"
+              />
+              <View style={styles.cardText}>
+                <Text style={styles.cardTitle}>Turn-Based AI Call</Text>
+                <Text style={styles.cardDesc}>
+                  Push-to-talk voice to text to speech interaction
+                </Text>
+              </View>
+            </View>
+          </GradientCard>
+        </Pressable>
+
+        <Pressable
+          style={styles.cardWrap}
+          onPress={() => navigation.navigate("VoiceAssistant")}
+        >
+          <GradientCard>
+            <View style={styles.cardRow}>
+              <Ionicons
+                name="headset-outline"
+                size={26}
+                color="#A78BFA"
+              />
+              <View style={styles.cardText}>
+                <Text style={styles.cardTitle}>Voice Assistant</Text>
+                <Text style={styles.cardDesc}>
+                  Record → AI Process → Voice Response
+                </Text>
+              </View>
+            </View>
+          </GradientCard>
+        </Pressable>
+
       </View>
     </ScreenWrapper>
   );
