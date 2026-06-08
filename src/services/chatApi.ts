@@ -1,4 +1,4 @@
-import { ApiError } from "./api";
+import { ApiError, fetchWithAuth } from "./api";
 
 export const CHAT_API_BASE_URL = "https://api.sankatseva.com/api/v1";
 export const CHAT_WS_URL = "wss://api.sankatseva.com/api/v1/ws/chat";
@@ -34,11 +34,10 @@ export interface WebSocketMessage {
 // HTTP Chat Management API
 export const chatApi = {
   listChats: async (accessToken: string): Promise<Chat[]> => {
-    const response = await fetch(`${CHAT_API_BASE_URL}/chats/`, {
+    const response = await fetchWithAuth(`${CHAT_API_BASE_URL}/chats/`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
       },
     });
 
@@ -60,11 +59,10 @@ export const chatApi = {
     title: string,
     model: LLMProvider,
   ): Promise<Chat> => {
-    const response = await fetch(`${CHAT_API_BASE_URL}/chats/`, {
+    const response = await fetchWithAuth(`${CHAT_API_BASE_URL}/chats/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ title, model }),
     });
@@ -86,13 +84,12 @@ export const chatApi = {
     accessToken: string,
     chatId: string,
   ): Promise<ChatMessage[]> => {
-    const response = await fetch(
+    const response = await fetchWithAuth(
       `${CHAT_API_BASE_URL}/chats/${chatId}/history`,
       {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
       },
     );
@@ -114,11 +111,10 @@ export const chatApi = {
     accessToken: string,
     chatId: string,
   ): Promise<void> => {
-    const response = await fetch(`${CHAT_API_BASE_URL}/chats/${chatId}`, {
+    const response = await fetchWithAuth(`${CHAT_API_BASE_URL}/chats/${chatId}`, {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
       },
     });
 

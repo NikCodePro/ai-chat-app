@@ -293,11 +293,13 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
   const toggleMute = useCallback(() => {
     if (isMuted) {
       setIsMuted(false);
+      isMutedRef.current = false;
       startListening();
       return;
     }
 
     setIsMuted(true);
+    isMutedRef.current = true;
     stopListening();
     setStatus("Disconnected");
   }, [isMuted, startListening, stopListening, setStatus]);

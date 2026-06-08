@@ -1,5 +1,4 @@
-import { API_BASE_URL } from './api';
-import { useAppStore } from '../store/appStore';
+import { API_BASE_URL, fetchWithAuth } from './api';
 import { Room, RoomEvent, RemoteTrack, RemoteParticipant } from 'livekit-client';
 
 // LiveAvatar channel topics — from the official SDK const.ts
@@ -14,12 +13,10 @@ class WebRTCService {
   public onConnectionStateChange: ((state: string) => void) | null = null;
 
   private async post(path: string, body: any): Promise<any> {
-    const token = await useAppStore.getState().getValidToken();
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetchWithAuth(`${API_BASE_URL}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(body),
     });

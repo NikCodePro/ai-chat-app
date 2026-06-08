@@ -1,3 +1,6 @@
+import Toast from 'react-native-toast-message';
+import { tokenStorage } from "./tokenStorage";
+
 // API Base Configuration
 export const API_BASE_URL = "https://api.sankatseva.com/api/v1";
 // export const API_BASE_URL = "http://192.168.1.16:8000/api/v1";
@@ -136,14 +139,97 @@ async function handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
     : {};
 
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      getPayloadMessage(data) || "API request failed",
-      data,
-    );
+    const errorMsg = getPayloadMessage(data) || "API request failed";
+    Toast.show({
+      type: 'error',
+      text1: 'Error',
+      text2: errorMsg,
+    });
+    throw new ApiError(response.status, errorMsg, data);
   }
 
   return data;
+}
+
+let isRefreshing = false;
+let failedQueue: { resolve: (value?: unknown) => void; reject: (reason?: any) => void }[] = [];
+
+const processQueue = (error: Error | null, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const tokens = await tokenStorage.getTokens();
+  let accessToken = tokens?.accessToken;
+
+  const headers = new Headers(options.headers || {});
+  if (accessToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+
+  let response = await fetch(url, { ...options, headers });
+
+  if (response.status === 401 && tokens?.refreshToken) {
+    if (isRefreshing) {
+      try {
+        const newToken = await new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        });
+        headers.set("Authorization", `Bearer ${newToken}`);
+        return fetch(url, { ...options, headers });
+      } catch (err) {
+        return response;
+      }
+    }
+
+    isRefreshing = true;
+    try {
+      const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: tokens.refreshToken }),
+      });
+
+      if (!refreshResponse.ok) {
+        throw new Error("Session expired");
+      }
+
+      const refreshData = await refreshResponse.json();
+      const newAccessToken = refreshData.data.access_token;
+      
+      await tokenStorage.setTokens(newAccessToken, refreshData.data.refresh_token, {
+        id: refreshData.data.user.id,
+        name: refreshData.data.user.name,
+        username: refreshData.data.user.username,
+        email: refreshData.data.user.email,
+        phone: refreshData.data.user.phone,
+      });
+
+      processQueue(null, newAccessToken);
+      
+      headers.set("Authorization", `Bearer ${newAccessToken}`);
+      response = await fetch(url, { ...options, headers });
+    } catch (err) {
+      processQueue(err as Error, null);
+      await tokenStorage.clearTokens();
+      Toast.show({
+        type: 'error',
+        text1: 'Session Expired',
+        text2: 'Please log in again.',
+      });
+    } finally {
+      isRefreshing = false;
+    }
+  }
+
+  return response;
 }
 
 // Auth API endpoints
@@ -288,11 +374,10 @@ export const authApi = {
   },
 
   getCurrentUser: async (accessToken: string): Promise<User> => {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    const response = await fetchWithAuth(`${API_BASE_URL}/auth/me`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
       },
     });
     const data = await handleResponse<User>(response);
@@ -315,11 +400,10 @@ export const authApi = {
     name?: string,
     username?: string,
   ): Promise<User> => {
-    const response = await fetch(`${API_BASE_URL}/users/me`, {
+    const response = await fetchWithAuth(`${API_BASE_URL}/users/me`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ name, username }),
     });
@@ -331,11 +415,10 @@ export const authApi = {
     accessToken: string,
     newPassword: string,
   ): Promise<void> => {
-    await fetch(`${API_BASE_URL}/auth/change-password`, {
+    await fetchWithAuth(`${API_BASE_URL}/auth/change-password`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
         new_password: newPassword,

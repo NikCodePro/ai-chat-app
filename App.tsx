@@ -38,6 +38,8 @@ LogBox.ignoreLogs([
   'Expo AV has been deprecated',
 ]);
 
+import Toast from 'react-native-toast-message';
+
 export default function App() {
   useEffect(() => {
     const requestPermissions = async () => {
@@ -53,6 +55,7 @@ export default function App() {
     <>
       <StatusBar style="light" />
       <AppNavigator />
+      <Toast />
     </>
   );
 }
