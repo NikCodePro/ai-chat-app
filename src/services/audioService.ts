@@ -1,87 +1,93 @@
-import { Audio } from "expo-av";
+import { Audio, InterruptionModeIOS } from "expo-av";
+import { File, Paths } from "expo-file-system";
 import LiveAudioStream from "react-native-live-audio-stream";
 import { Buffer } from "buffer";
-import { useDebugStore } from "../store/useDebugStore";
 
 import { debugService } from "./debugService";
 
 /**
- * Client-side PCM buffering & streaming playback strategy:
+ * Single-clip playback per AI utterance.
  *
- * Instead of creating a new Audio.Sound for every tiny chunk the server sends
- * (which causes massive stutter on React Native), we accumulate raw PCM bytes
- * into fixed-size segments and use a **pre-loading** pipeline:
- *
- * 1. While segment N is playing, segment N+1 is already loaded as an Audio.Sound
- *    and ready to start instantly when N finishes — eliminating inter-segment gaps.
- *
- * 2. Segments are kept small (300ms / 14400 bytes at 24kHz/16bit/mono) for
- *    consistent low latency throughout playback.
- *
- * 3. A short flush timer (80ms) ensures the final partial buffer always plays.
+ * Every multi-clip approach caused an audible pause ~2–3s in (first clip ending).
+ * We now buffer the full response and play it as ONE wav / ONE Sound — zero
+ * mid-speech transitions.
  */
 
-// 24kHz, 16-bit mono = 48000 bytes per second
-const FIRST_SEGMENT_BYTES = 36000;   // ~750ms — consistent starting buffer
-const NORMAL_SEGMENT_BYTES = 36000;  // ~750ms — perfectly matched to prevent underruns
-const FLUSH_DELAY_MS = 250;          // flush partial buffer after silence
+const PLAYBACK_SAMPLE_RATE = 24000;
+/** Brief wait after finalize so trailing audio chunks can arrive before play. */
+const PLAY_DEBOUNCE_MS = 80;
 
 export class AudioService {
-  // ── Playback state ──
-  private pcmBuffer: Buffer = Buffer.alloc(0);
-  private segmentQueue: { id: number; data: string }[] = [];
+  private incomingChunks: Buffer[] = [];
+  private totalBytes = 0;
+  private streamFinalized = false;
+  private playTimer: ReturnType<typeof setTimeout> | null = null;
+
   private isPlaying = false;
   private currentSound: Audio.Sound | null = null;
-  private preloadedSound: Audio.Sound | null = null;
-  private preloadedSegmentId: number | null = null;
-  private segmentCounter = 0;
-  private flushTimer: ReturnType<typeof setTimeout> | null = null;
-  private isFirstSegment = true;
+  private currentUri: string | null = null;
+  private fileCounter = 0;
+  private playbackSessionActive = false;
 
-  // ── Recording state ──
   private isRecording = false;
-  private isGated = false;
+  private isMicPaused = false;
   private onChunkCallback: ((base64Data: string) => void) | null = null;
-
-  public setGated(gated: boolean) {
-    this.isGated = gated;
-    if (__DEV__) {
-      if (gated) {
-        console.log("[AUDIO-GATE] Mic output gated — dropping chunks");
-      } else {
-        console.log("[AUDIO-GATE] Mic output un-gated — resuming send");
-      }
-    }
-  }
+  private onPlaybackIdle: (() => void) | null = null;
+  private onPlaybackStart: (() => void) | null = null;
 
   constructor() {
-    this.init();
+    void this.init();
+  }
+
+  public setOnPlaybackIdle(callback: (() => void) | null) {
+    this.onPlaybackIdle = callback;
+  }
+
+  public setOnPlaybackStart(callback: (() => void) | null) {
+    this.onPlaybackStart = callback;
+  }
+
+  public setGated(_gated: boolean) {
+    // Mic gating is handled in useVoiceCall.
   }
 
   private async init() {
     await Audio.requestPermissionsAsync();
+    await this.setRecordingAudioMode();
+
+    LiveAudioStream.init({
+      sampleRate: 16000,
+      channels: 1 as 1 | 2,
+      bitsPerSample: 16 as 8 | 16,
+      audioSource: 7,
+      wavFile: "audio.wav",
+      bufferSize: 4096,
+    });
+
+    LiveAudioStream.on("data", (data: string) => {
+      if (this.onChunkCallback && !this.isMicPaused) {
+        this.onChunkCallback(data);
+      }
+    });
+  }
+
+  private async setRecordingAudioMode() {
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: true,
       playsInSilentModeIOS: true,
       playThroughEarpieceAndroid: false,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      shouldDuckAndroid: false,
     });
+  }
 
-    const options = {
-      sampleRate: 16000,
-      channels: 1 as 1 | 2,
-      bitsPerSample: 16 as 8 | 16,
-      audioSource: 7, // 7 = VOICE_COMMUNICATION (enables Acoustic Echo Cancellation and Noise Suppression natively)
-      wavFile: "audio.wav",
-      bufferSize: 4096, // Smaller buffer for more frequent, lower-latency mic chunks
-    };
-
-    LiveAudioStream.init(options);
-
-    // Register listener exactly ONCE to avoid double-events
-    LiveAudioStream.on("data", (data: string) => {
-      if (this.onChunkCallback) {
-        this.onChunkCallback(data);
-      }
+  private async setPlaybackAudioMode() {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      playThroughEarpieceAndroid: false,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      shouldDuckAndroid: false,
     });
   }
 
@@ -89,6 +95,7 @@ export class AudioService {
     this.onChunkCallback = onChunk;
     if (this.isRecording) return;
     this.isRecording = true;
+    this.isMicPaused = false;
     LiveAudioStream.start();
   }
 
@@ -96,18 +103,28 @@ export class AudioService {
     this.onChunkCallback = null;
     if (!this.isRecording) return;
     this.isRecording = false;
+    this.isMicPaused = false;
     LiveAudioStream.stop();
+  }
+
+  public pauseRecording() {
+    if (!this.isRecording || this.isMicPaused) return;
+    this.isMicPaused = true;
+    LiveAudioStream.stop();
+  }
+
+  public resumeRecording() {
+    if (!this.isRecording || !this.isMicPaused) return;
+    this.isMicPaused = false;
+    LiveAudioStream.start();
   }
 
   public createWavFromChunks(chunks: string[], sampleRate: number = 16000): string {
     const buffers = chunks.map((c) => Buffer.from(c, "base64"));
-    const combinedPcm = Buffer.concat(buffers);
-    const wavBuffer = this.addWavHeader(combinedPcm, sampleRate);
-    return wavBuffer.toString("base64");
+    return this.addWavHeader(Buffer.concat(buffers), sampleRate).toString("base64");
   }
 
-  // ── WAV header for raw PCM ──
-  private addWavHeader(pcmBuffer: Buffer, sampleRate: number = 24000): Buffer {
+  private addWavHeader(pcmBuffer: Buffer, sampleRate: number = PLAYBACK_SAMPLE_RATE): Buffer {
     const header = Buffer.alloc(44);
     const dataLength = pcmBuffer.length;
 
@@ -116,11 +133,11 @@ export class AudioService {
     header.write("WAVE", 8);
     header.write("fmt ", 12);
     header.writeUInt32LE(16, 16);
-    header.writeUInt16LE(1, 20);   // PCM
-    header.writeUInt16LE(1, 22);   // mono
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(1, 22);
     header.writeUInt32LE(sampleRate, 24);
-    header.writeUInt32LE(sampleRate * 1 * 16 / 8, 28);
-    header.writeUInt16LE(1 * 16 / 8, 32);
+    header.writeUInt32LE(sampleRate * 2, 28);
+    header.writeUInt16LE(2, 32);
     header.writeUInt16LE(16, 34);
     header.write("data", 36);
     header.writeUInt32LE(dataLength, 40);
@@ -128,64 +145,37 @@ export class AudioService {
     return Buffer.concat([header, pcmBuffer]);
   }
 
-  // ── Smooth chunk boundaries to prevent popping ──
-  private applyCrossfadeFades(pcmBuffer: Buffer, fadeMs: number = 10, sampleRate: number = 24000): Buffer {
-    const fadeSamples = Math.floor((sampleRate * fadeMs) / 1000);
-    const fadeBytes = fadeSamples * 2; // 16-bit mono
-
-    if (pcmBuffer.length < fadeBytes * 2) return pcmBuffer;
-
-    // Fade In
-    for (let i = 0; i < fadeBytes; i += 2) {
-      const sample = pcmBuffer.readInt16LE(i);
-      const multiplier = i / fadeBytes;
-      pcmBuffer.writeInt16LE(Math.round(sample * multiplier), i);
-    }
-
-    // Fade Out
-    for (let i = 0; i < fadeBytes; i += 2) {
-      const pos = pcmBuffer.length - fadeBytes + i;
-      const sample = pcmBuffer.readInt16LE(pos);
-      const multiplier = 1 - (i / fadeBytes);
-      pcmBuffer.writeInt16LE(Math.round(sample * multiplier), pos);
-    }
-    return pcmBuffer;
+  public prepareForNewStream() {
+    void this.stopPlayback();
+    this.resetStreamState();
   }
 
-  // ── Public: queue an incoming server audio chunk ──
-  public queueAudioChunk(base64Data: string, chunkId?: number) {
+  public finalizeIncomingStream() {
+    this.streamFinalized = true;
+    this.schedulePlayEntireUtterance();
+  }
+
+  private resetStreamState() {
+    if (this.playTimer) {
+      clearTimeout(this.playTimer);
+      this.playTimer = null;
+    }
+    this.incomingChunks = [];
+    this.totalBytes = 0;
+    this.streamFinalized = false;
+  }
+
+  public queueAudioChunk(base64Data: string) {
     try {
       const pcmChunk = Buffer.from(base64Data, "base64");
       if (pcmChunk.length === 0) return;
 
-      // Append raw PCM to the accumulation buffer
-      this.pcmBuffer = Buffer.concat([this.pcmBuffer, pcmChunk]);
+      this.incomingChunks.push(pcmChunk);
+      this.totalBytes += pcmChunk.length;
 
-      // Clear any pending flush timer since new data arrived
-      if (this.flushTimer) {
-        clearTimeout(this.flushTimer);
-        this.flushTimer = null;
-      }
-
-      // Determine how much data we need before creating a segment
-      const targetSize = this.isFirstSegment
-        ? FIRST_SEGMENT_BYTES
-        : NORMAL_SEGMENT_BYTES;
-
-      // Extract complete segments from the buffer
-      while (this.pcmBuffer.length >= targetSize) {
-        const segmentPcm = Buffer.from(this.pcmBuffer.subarray(0, targetSize));
-        this.pcmBuffer = Buffer.from(this.pcmBuffer.subarray(targetSize));
-        this.enqueueSegment(this.applyCrossfadeFades(segmentPcm));
-        this.isFirstSegment = false;
-      }
-
-      // Set a flush timer for any remaining partial data
-      // This ensures the last bit of audio always plays
-      if (this.pcmBuffer.length > 0) {
-        this.flushTimer = setTimeout(() => {
-          this.flushRemainingBuffer();
-        }, FLUSH_DELAY_MS);
+      // Trailing chunks may arrive just after finalize — re-schedule play.
+      if (this.streamFinalized) {
+        this.schedulePlayEntireUtterance();
       }
     } catch (e) {
       debugService.onDroppedChunk();
@@ -193,173 +183,143 @@ export class AudioService {
     }
   }
 
-  // ── Flush whatever is left in the PCM buffer ──
-  private flushRemainingBuffer() {
-    this.flushTimer = null;
-    if (this.pcmBuffer.length > 0) {
-      const remaining = Buffer.from(this.pcmBuffer);
-      this.pcmBuffer = Buffer.alloc(0);
-      this.enqueueSegment(this.applyCrossfadeFades(remaining));
+  private getAllPcm(): Buffer {
+    if (this.incomingChunks.length === 0) return Buffer.alloc(0);
+    if (this.incomingChunks.length === 1) return Buffer.from(this.incomingChunks[0]);
+    return Buffer.concat(this.incomingChunks);
+  }
+
+  private schedulePlayEntireUtterance() {
+    if (this.playTimer) clearTimeout(this.playTimer);
+    this.playTimer = setTimeout(() => {
+      this.playTimer = null;
+      void this.playEntireUtterance();
+    }, PLAY_DEBOUNCE_MS);
+  }
+
+  private writeWavFile(pcm: Buffer): string {
+    const wav = this.addWavHeader(pcm, PLAYBACK_SAMPLE_RATE);
+    this.fileCounter += 1;
+    const file = new File(Paths.cache, `voice_${this.fileCounter}_${Date.now()}.wav`);
+    file.create({ overwrite: true });
+    file.write(new Uint8Array(wav));
+    return file.uri;
+  }
+
+  private deleteFile(uri: string) {
+    try {
+      const file = new File(uri);
+      if (file.exists) file.delete();
+    } catch {
+      // ignore
     }
   }
 
-  // ── Convert a PCM segment to WAV and add to the playback queue ──
-  private enqueueSegment(pcmData: Buffer) {
-    this.segmentCounter++;
-    const wavBuffer = this.addWavHeader(pcmData, 24000);
-    const wavBase64 = wavBuffer.toString("base64");
-
-    this.segmentQueue.push({ id: this.segmentCounter, data: wavBase64 });
-    debugService.onQueueUpdate(this.segmentQueue.length);
-
-    if (__DEV__) {
-      console.log(
-        `[BUFFER] Segment ${this.segmentCounter} | pcm: ${pcmData.length} bytes | queue: ${this.segmentQueue.length}`
-      );
-    }
-
-    if (!this.isPlaying) {
-      this.playNextSegment();
-    } else {
-      // While current segment plays, pre-load the next one for gapless transition
-      this.tryPreloadNext();
-    }
+  private async beginPlaybackSession() {
+    if (this.playbackSessionActive) return;
+    this.playbackSessionActive = true;
+    this.pauseRecording();
+    await this.setPlaybackAudioMode();
   }
 
-  // ── Pre-load the next segment while current one is playing ──
-  private async tryPreloadNext() {
-    // Only preload if we don't already have one ready and there's something to preload
-    if (this.preloadedSound || this.segmentQueue.length === 0) return;
+  private async endPlaybackSession() {
+    this.resetStreamState();
 
-    const segment = this.segmentQueue[0]; // peek, don't shift yet
-    if (!segment) return;
+    if (this.playbackSessionActive) {
+      this.playbackSessionActive = false;
+      await this.setRecordingAudioMode();
+      this.resumeRecording();
+    }
+
+    debugService.onPlaybackFinish();
+    this.onPlaybackIdle?.();
+  }
+
+  private async playEntireUtterance() {
+    if (this.isPlaying || !this.streamFinalized) return;
+
+    const pcm = this.getAllPcm();
+    if (pcm.length === 0) return;
+
+    await this.beginPlaybackSession();
+    this.isPlaying = true;
 
     try {
-      const uri = `data:audio/wav;base64,${segment.data}`;
+      const uri = this.writeWavFile(pcm);
       const { sound } = await Audio.Sound.createAsync(
         { uri },
-        { shouldPlay: false } // Create but don't play yet
+        { shouldPlay: true, progressUpdateIntervalMillis: 200 },
+        undefined,
+        false
       );
-      this.preloadedSound = sound;
-      this.preloadedSegmentId = segment.id;
-      if (__DEV__) {
-        console.log(`[PRELOAD] Ready: segment=${segment.id}`);
-      }
-    } catch (e) {
-      // Preload failed — will fall back to normal load in playNextSegment
-      this.preloadedSound = null;
-      this.preloadedSegmentId = null;
-      if (__DEV__) console.warn("[PRELOAD] Failed:", e);
-    }
-  }
-
-  // ── Play the next buffered segment ──
-  private async playNextSegment() {
-    if (this.isPlaying || this.segmentQueue.length === 0) {
-      if (this.segmentQueue.length === 0) {
-        debugService.onPlaybackFinish();
-      }
-      return;
-    }
-
-    this.isPlaying = true;
-    const segment = this.segmentQueue.shift()!;
-    debugService.onQueueUpdate(this.segmentQueue.length);
-
-    try {
-      let sound: Audio.Sound;
-
-      // Check if we already pre-loaded this segment
-      if (this.preloadedSound && this.preloadedSegmentId === segment.id) {
-        sound = this.preloadedSound;
-        this.preloadedSound = null;
-        this.preloadedSegmentId = null;
-        // Start playback on the pre-loaded sound
-        await sound.playAsync();
-      } else {
-        // Discard stale preload if segment ID doesn't match
-        if (this.preloadedSound) {
-          this.preloadedSound.unloadAsync().catch(() => {});
-          this.preloadedSound = null;
-          this.preloadedSegmentId = null;
-        }
-        // Create and play immediately
-        const uri = `data:audio/wav;base64,${segment.data}`;
-        const result = await Audio.Sound.createAsync(
-          { uri },
-          { shouldPlay: true }
-        );
-        sound = result.sound;
-      }
 
       this.currentSound = sound;
-      debugService.onPlaybackStart(segment.id);
-      if (__DEV__) {
-        console.log(`[PLAY_START] segment=${segment.id}`);
-      }
+      this.currentUri = uri;
 
-      // Immediately start pre-loading the next segment for gapless playback
-      this.tryPreloadNext();
+      // Playback is now actually starting (sound is created and shouldPlay=true).
+      this.onPlaybackStart?.();
 
       sound.setOnPlaybackStatusUpdate((status) => {
         if (!status.isLoaded) {
-          // Audio load error — unblock the pipeline so the next segment can play.
           if ("error" in status) {
-            if (__DEV__) console.warn("[PLAY] Load error:", status.error);
+            if (__DEV__) console.warn("[PLAY] Error:", status.error);
             sound.unloadAsync().catch(() => {});
-            if (this.currentSound === sound) this.currentSound = null;
+            this.deleteFile(uri);
             this.isPlaying = false;
-            this.playNextSegment();
+            this.currentSound = null;
+            this.currentUri = null;
+            void this.endPlaybackSession();
           }
           return;
         }
+
         if (status.didJustFinish) {
           sound.unloadAsync().catch(() => {});
-          if (this.currentSound === sound) {
-            this.currentSound = null;
-          }
+          this.deleteFile(uri);
+          this.currentSound = null;
+          this.currentUri = null;
           this.isPlaying = false;
-          this.playNextSegment();
+          void this.endPlaybackSession();
         }
       });
+
+      debugService.onPlaybackStart("utterance");
+      if (__DEV__) {
+        const sec = (pcm.length / (PLAYBACK_SAMPLE_RATE * 2)).toFixed(1);
+        console.log(`[PLAY] Full utterance | ${pcm.length} bytes (~${sec}s)`);
+      }
     } catch (e) {
       if (__DEV__) console.error("Audio playback error", e);
       debugService.onDroppedChunk();
       this.isPlaying = false;
-      this.playNextSegment();
+      this.currentSound = null;
+      this.currentUri = null;
+      await this.endPlaybackSession();
     }
   }
 
-  // ── Stop all playback and clear buffers ──
   public async stopPlayback() {
-    // Clear flush timer
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
+    if (this.playTimer) {
+      clearTimeout(this.playTimer);
+      this.playTimer = null;
     }
-
-    // Clear all buffers
-    this.pcmBuffer = Buffer.alloc(0);
-    this.segmentQueue = [];
-    this.segmentCounter = 0;
-    this.isFirstSegment = true;
+    this.incomingChunks = [];
+    this.totalBytes = 0;
+    this.streamFinalized = false;
     debugService.onQueueUpdate(0);
 
-    // Stop current sound
     if (this.currentSound) {
+      if (this.currentUri) this.deleteFile(this.currentUri);
       await this.currentSound.stopAsync().catch(() => {});
       await this.currentSound.unloadAsync().catch(() => {});
       this.currentSound = null;
-    }
-
-    // Unload preloaded sound
-    if (this.preloadedSound) {
-      await this.preloadedSound.unloadAsync().catch(() => {});
-      this.preloadedSound = null;
-      this.preloadedSegmentId = null;
+      this.currentUri = null;
     }
 
     this.isPlaying = false;
+    this.playbackSessionActive = false;
+    await this.setRecordingAudioMode();
+    this.resumeRecording();
     debugService.onPlaybackFinish();
   }
 }

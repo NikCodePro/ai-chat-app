@@ -40,7 +40,7 @@ export function HomeScreen({ navigation }: Props) {
       <View style={styles.container}>
         <View style={styles.header}>
           <View style={styles.titleContainer}>
-            <Text style={styles.title}>Choose Your Mode</Text>
+            <Text style={styles.title}>Choose Your</Text>
             <Text style={styles.subtitle}>
               Switch between text intelligence and voice assistant flow
             </Text>

@@ -16,9 +16,8 @@ export type CallStatus =
   | "AI Thinking..."
   | "AI Speaking...";
 
-const SPEECH_RMS_THRESHOLD = 2000;       // Lower threshold because hardware Noise Suppression cleans the signal
-const INTERRUPT_RMS_THRESHOLD = 3500;    // Lower threshold because hardware Echo Cancellation removes the speaker output
-const SILENCE_TIMEOUT_MS = 1500;         // 1.5s silence threshold to prevent early cut-offs
+const SPEECH_RMS_THRESHOLD = 2000;
+const SILENCE_TIMEOUT_MS = 1500;
 
 function calculateRMS(base64Data: string): number {
   try {
@@ -84,19 +83,9 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
       const isSpeech = rms > SPEECH_RMS_THRESHOLD;
       const currentStatus = statusRef.current;
 
-      // 1. If AI is speaking: check for user interruption
+      // Mic is paused during AI playback — server sends ai_interrupted for barge-in
       if (currentStatus === "AI Speaking...") {
-        if (rms > INTERRUPT_RMS_THRESHOLD) {
-          if (__DEV__) console.log(`[VAD] User interrupted AI! RMS: ${rms}`);
-          audioService.stopPlayback();
-          isGatedRef.current = false;
-          setStatus("Listening...");
-          userHasSpoken = true;
-          silenceStart = 0;
-          voiceWsService.sendResumeStream();
-          voiceWsService.sendAudioChunk(base64Data);
-        }
-        return; // drop mic chunks during AI playback unless interrupting
+        return;
       }
 
       // 2. If connecting or disconnected: drop chunks
@@ -166,7 +155,7 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
       // If we are in a video call, HeyGen handles the audio generation from text, 
       // so we drop Gemini's raw audio to avoid playing both.
       if (!options?.isVideoCall && payload.audio) {
-        audioService.queueAudioChunk(payload.audio, payload.chunk_id);
+        audioService.queueAudioChunk(payload.audio);
       }
     };
 
@@ -177,17 +166,21 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
     };
 
     const handleAiStartedSpeaking = () => {
+      audioService.prepareForNewStream();
+      audioService.pauseRecording();
       audioService.setGated(true);
       isGatedRef.current = true;
       voiceWsService.sendPauseStream();
-      setStatus("AI Speaking...");
+      // Server started generating; audio will start after finalize.
+      setStatus("AI Thinking...");
     };
 
     const handleAiFinishedSpeaking = () => {
+      audioService.finalizeIncomingStream();
       audioService.setGated(false);
       isGatedRef.current = false;
       voiceWsService.sendResumeStream();
-      setStatus("Listening...");
+      // Keep "AI Speaking..." until audio playback fully drains (see handlePlaybackIdle).
     };
 
     const handleAiInterrupted = () => {
@@ -197,6 +190,20 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
       voiceWsService.sendResumeStream();
       setStatus("Listening...");
     };
+
+    const handlePlaybackIdle = () => {
+      if (statusRef.current === "AI Speaking...") {
+        setStatus("Listening...");
+      }
+      if (isRecordingRef.current && !isMutedRef.current) {
+        audioService.resumeRecording();
+      }
+    };
+
+    audioService.setOnPlaybackIdle(handlePlaybackIdle);
+    audioService.setOnPlaybackStart(() => {
+      setStatus("AI Speaking...");
+    });
 
     const handleError = (payload: any) => {
       console.error("Voice WS Error:", payload?.message || payload);
@@ -222,6 +229,8 @@ export function useVoiceCall(options?: UseVoiceCallOptions) {
       voiceWsService.off("ai_finished_speaking", handleAiFinishedSpeaking);
       voiceWsService.off("ai_interrupted", handleAiInterrupted);
       voiceWsService.off("error", handleError);
+      audioService.setOnPlaybackIdle(null);
+      audioService.setOnPlaybackStart(null);
     };
   }, [startListening, stopListening, token, setStatus]);
 
